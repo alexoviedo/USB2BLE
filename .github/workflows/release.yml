@@ -1,0 +1,125 @@
+name: Release Firmware Artifacts
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "main/**"
+      - "components/**"
+      - ".github/workflows/release.yml"
+      - "scripts/**"
+      - "CMakeLists.txt"
+      - "sdkconfig*"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      release_id:
+        description: "Optional release id override (defaults to commit SHA)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: firmware-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  preflight-tests:
+    name: ci / preflight-tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure unit test build
+        run: cmake -S tests/unit -B build/unit
+
+      - name: Build unit tests
+        run: cmake --build build/unit --parallel
+
+      - name: Run unit tests
+        run: ctest --test-dir build/unit --output-on-failure
+
+  build-firmware:
+    name: ci / build-firmware (esp32s3)
+    needs: preflight-tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Resolve release metadata
+        id: meta
+        run: |
+          RELEASE_ID="${{ github.event.inputs.release_id }}"
+          if [ -z "${RELEASE_ID}" ]; then
+            RELEASE_ID="${GITHUB_SHA}"
+          fi
+          echo "release_id=${RELEASE_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Build with ESP-IDF
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: latest
+          target: esp32s3
+          command: idf.py build
+
+      - name: Prepare firmware artifacts
+        if: success()
+        run: |
+          mkdir -p firmware_artifacts
+          cp build/bootloader/bootloader.bin firmware_artifacts/
+          cp build/partition_table/partition-table.bin firmware_artifacts/
+          cp build/charm.bin firmware_artifacts/
+
+          cat <<EOF > firmware_artifacts/build-metadata.json
+          {
+            "release_id": "${{ steps.meta.outputs.release_id }}",
+            "build_time": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')",
+            "commit_sha": "${GITHUB_SHA}",
+            "target": "esp32s3",
+            "files": [
+              "bootloader.bin",
+              "partition-table.bin",
+              "charm.bin"
+            ]
+          }
+          EOF
+
+      - name: Generate firmware artifact integrity and provenance
+        if: success()
+        run: |
+          scripts/generate_release_integrity.sh firmware_artifacts firmware-esp32s3-artifacts
+
+      - name: Append firmware integrity summary
+        if: success()
+        run: |
+          echo "## Firmware Release Integrity" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Release ID: \`${{ steps.meta.outputs.release_id }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- SHA256: \`firmware_artifacts/SHA256SUMS\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Provenance: \`firmware_artifacts/provenance.json\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Verify command: \`cd firmware_artifacts && sha256sum -c SHA256SUMS\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload firmware artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-esp32s3-artifacts
+          path: firmware_artifacts/
+          if-no-files-found: error
+
+      - name: Upload debug artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-esp32s3-debug-artifacts
+          path: |
+            build/*.elf
+            build/*.map
+          if-no-files-found: ignore

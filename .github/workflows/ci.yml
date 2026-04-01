@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - production-closeout-real-usb-ble
+
+jobs:
+  unit-tests:
+    name: ci / unit-tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure unit test build
+        run: cmake -S tests/unit -B build/unit
+
+      - name: Build unit tests
+        run: cmake --build build/unit --parallel
+
+      - name: Run unit tests
+        run: ctest --test-dir build/unit --output-on-failure
+
+  build-firmware:
+    name: ci / build-firmware (esp32s3)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build with ESP-IDF
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: latest
+          target: esp32s3
+          command: idf.py build
+
+      - name: Generate Workflow Summary
+        if: always()
+        run: |
+          echo "## ESP-IDF Firmware Build Summary" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ **Build completed successfully.**" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "❌ **Build failed.**" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "- **Target:** esp32s3" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **IDF Version:** latest" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Job Status:** ${{ job.status }}" >> "$GITHUB_STEP_SUMMARY"
