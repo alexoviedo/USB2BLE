@@ -1,0 +1,13 @@
+idf_component_register(SRCS "src/device_registry.cpp"
+                            "src/hid_semantic_model.cpp"
+                            "src/decode_plan.cpp"
+                            "src/hid_decoder.cpp"
+                            "src/logical_state.cpp"
+                            "src/mapping_bundle.cpp"
+                            "src/mapping_engine.cpp"
+                            "src/profile_manager.cpp"
+                            "src/profile_generic_gamepad_encoder.cpp"
+                            "src/supervisor.cpp"
+                            "src/recovery_policy.cpp"
+                       INCLUDE_DIRS "include"
+                       REQUIRES charm_contracts charm_ports)
