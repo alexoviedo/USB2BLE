@@ -11,7 +11,7 @@ export interface SerialMonitorDiagnostics {
 
 const PREFERRED_PORT_INFO_KEY = 'charm_preferred_port_info';
 const PORT_OPEN_RETRY_DELAYS_MS = [150, 350, 700] as const;
-const INITIAL_ACTIVITY_TIMEOUT_MS = 2500;
+const INITIAL_ACTIVITY_TIMEOUT_MS = 4000;
 const INITIAL_ACTIVITY_POLL_MS = 50;
 
 type SerialMonitorErrorCode =
@@ -36,7 +36,6 @@ class SerialMonitorError extends Error {
 type PortCandidate = {
   port: SerialPort;
   source: 'granted' | 'requested';
-  requireInitialData: boolean;
   index: number;
 };
 
@@ -96,7 +95,19 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
       }
 
       try {
-        await this.connectToPort(candidate, baudRate);
+        this.logEvent('candidate_selected', {
+          source: candidate.source,
+          candidateIndex: candidate.index,
+          portInfo: this.safeGetPortInfo(candidate.port),
+        });
+
+        const connectionOutcome = await this.connectToPort(candidate, baudRate);
+        this.logEvent('candidate_connected', {
+          source: candidate.source,
+          candidateIndex: candidate.index,
+          initialStreamState: connectionOutcome.initialStreamState,
+          portInfo: this.safeGetPortInfo(candidate.port),
+        });
         return;
       } catch (error: any) {
         lastError = error;
@@ -118,8 +129,11 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
     throw new SerialMonitorError('No serial ports available', 'PORT_NOT_SELECTED');
   }
 
-  private async connectToPort(candidate: PortCandidate, baudRate: number): Promise<void> {
-    const { port, source, requireInitialData, index } = candidate;
+  private async connectToPort(
+    candidate: PortCandidate,
+    baudRate: number
+  ): Promise<{ initialStreamState: 'active' | 'quiet' }> {
+    const { port, source, index } = candidate;
     const portInfo = this.safeGetPortInfo(port);
     this.logEvent('open_start', { source, candidateIndex: index, portInfo, baudRate });
     await this.openWithRetry(port, baudRate);
@@ -145,10 +159,8 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
     this.diagnostics.lastDataAtMs = null;
     this.decoder = new TextDecoder();
     this.readLoopPromise = this.startReadingLoop();
-
-    if (requireInitialData) {
-      await this.waitForInitialActivity(INITIAL_ACTIVITY_TIMEOUT_MS);
-    }
+    const initialStreamState = await this.waitForInitialActivity(INITIAL_ACTIVITY_TIMEOUT_MS);
+    return { initialStreamState };
   }
 
   private async selectGrantedPortCandidates(): Promise<PortCandidate[]> {
@@ -174,7 +186,6 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
       return sorted.map((item, index) => ({
         port: item.port,
         source: 'granted',
-        requireInitialData: true,
         index,
       }));
     } catch {
@@ -188,7 +199,6 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
       return {
         port: requested,
         source: 'requested',
-        requireInitialData: false,
         index: 0,
       };
     } catch (e: any) {
@@ -387,11 +397,11 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
     }
   }
 
-  private async waitForInitialActivity(timeoutMs: number): Promise<void> {
+  private async waitForInitialActivity(timeoutMs: number): Promise<'active' | 'quiet'> {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
       if (this.diagnostics.bytesReceived > 0) {
-        return;
+        return 'active';
       }
       if (!this.diagnostics.isReading) {
         throw new SerialMonitorError(
@@ -402,10 +412,13 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
       await this.delay(INITIAL_ACTIVITY_POLL_MS);
     }
 
-    throw new SerialMonitorError(
-      `Connected to serial port but no data was received within ${timeoutMs}ms. The selected port may be stale or inactive.`,
-      'STREAM_INACTIVE'
-    );
+    this.logEvent('initial_activity_timeout', {
+      timeoutMs,
+      bytesReceived: this.diagnostics.bytesReceived,
+      chunksReceived: this.diagnostics.chunksReceived,
+      portInfo: this.diagnostics.portInfo,
+    });
+    return 'quiet';
   }
 
   private async ensureActiveConsoleSignals(port: SerialPort): Promise<void> {
