@@ -86,7 +86,7 @@ describe('WebSerialFlasher', () => {
     mockESPLoader = {
       main_fn: vi.fn(),
       read_mac: vi.fn().mockResolvedValue('AA:BB:CC:DD:EE:FF'),
-      chip: { CHIP_NAME: 'ESP32-S3' },
+      chip: { CHIP_NAME: 'ESP32-S3', readMac: vi.fn().mockResolvedValue('aa-bb-cc-dd-ee-ff') },
       write_flash: vi.fn(),
       hard_reset: vi.fn()
     };
@@ -129,6 +129,7 @@ describe('WebSerialFlasher', () => {
     
     const mac = await flasher.getMacAddress();
     expect(mac).toBe('AA:BB:CC:DD:EE:FF');
+    expect(mockESPLoader.chip.readMac).toHaveBeenCalled();
     
     const chip = await flasher.getChipName();
     expect(chip).toBe('ESP32-S3');
