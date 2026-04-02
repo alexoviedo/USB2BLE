@@ -84,7 +84,14 @@ describe('WebSerialMonitor', () => {
   });
 
   it('prefers an already granted port', async () => {
-    const existingPort = { ...mockPort };
+    const activeReader = {
+      read: vi.fn()
+        .mockResolvedValueOnce({ value: new Uint8Array([65]), done: false })
+        .mockResolvedValueOnce({ value: undefined, done: true }),
+      releaseLock: vi.fn(),
+      cancel: vi.fn().mockResolvedValue(undefined),
+    };
+    const existingPort = { ...mockPort, readable: { getReader: vi.fn(() => activeReader) } };
     global.navigator.serial.getPorts = vi.fn().mockResolvedValue([existingPort]);
 
     await monitor.connect();
@@ -206,31 +213,57 @@ describe('WebSerialMonitor', () => {
     expect(onError.mock.calls[0][0].message).toMatch(/stream ended unexpectedly/i);
   });
 
-  it('does not require initial activity on the last candidate port', async () => {
-    const failingPort = {
+  it('falls back to requestPort after all granted candidates fail', async () => {
+    const stalePort = {
       ...mockPort,
-      open: vi.fn().mockRejectedValue(new DOMException('busy', 'NetworkError')),
+      open: vi.fn().mockRejectedValue(new DOMException('stale', 'InvalidStateError')),
       getInfo: vi.fn(() => ({ usbVendorId: 0x1111, usbProductId: 0x2222 })),
     };
-    const quietReader = {
-      read: vi.fn(() => new Promise(() => {})),
+    const requestedReader = {
+      read: vi.fn()
+        .mockResolvedValueOnce({ value: new Uint8Array([111, 107]), done: false })
+        .mockResolvedValueOnce({ value: undefined, done: true }),
       releaseLock: vi.fn(),
       cancel: vi.fn().mockResolvedValue(undefined),
     };
-    const lastCandidatePort = {
+    const requestedPort = {
       ...mockPort,
       open: vi.fn().mockResolvedValue(undefined),
       close: vi.fn().mockResolvedValue(undefined),
-      readable: { getReader: vi.fn(() => quietReader) },
+      readable: { getReader: vi.fn(() => requestedReader) },
       getInfo: vi.fn(() => ({ usbVendorId: 0x3333, usbProductId: 0x4444 })),
     };
 
-    global.navigator.serial.getPorts = vi.fn().mockResolvedValue([failingPort, lastCandidatePort]);
+    global.navigator.serial.getPorts = vi.fn().mockResolvedValue([stalePort]);
+    global.navigator.serial.requestPort = vi.fn().mockResolvedValue(requestedPort);
 
-    await expect(monitor.connect()).resolves.toBeUndefined();
-    expect(lastCandidatePort.open).toHaveBeenCalled();
+    await monitor.connect();
+
+    expect(stalePort.open).toHaveBeenCalled();
+    expect(global.navigator.serial.requestPort).toHaveBeenCalled();
+    expect(requestedPort.open).toHaveBeenCalled();
 
     await monitor.disconnect();
+  });
+
+  it('reports stale stream when granted port immediately closes', async () => {
+    const staleReader = {
+      read: vi.fn().mockResolvedValue({ value: undefined, done: true }),
+      releaseLock: vi.fn(),
+      cancel: vi.fn().mockResolvedValue(undefined),
+    };
+    const stalePort = {
+      ...mockPort,
+      open: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      readable: { getReader: vi.fn(() => staleReader) },
+      getInfo: vi.fn(() => ({ usbVendorId: 0x2222, usbProductId: 0x3333 })),
+    };
+
+    global.navigator.serial.getPorts = vi.fn().mockResolvedValue([stalePort]);
+    global.navigator.serial.requestPort = vi.fn().mockRejectedValue(new DOMException('cancel', 'NotFoundError'));
+
+    await expect(monitor.connect()).rejects.toMatchObject({ code: 'STALE_PORT' });
   });
 
 });

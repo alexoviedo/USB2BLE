@@ -1,5 +1,6 @@
 import { FlasherAdapter } from './types';
 import { FlashError } from '../types';
+import { logSerialLifecycleEvent } from '../serialLifecycle';
 
 const MAC_REGEX = /(?:^|\b)([0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5})(?:\b|$)/;
 
@@ -7,6 +8,7 @@ export class WebSerialFlasher implements FlasherAdapter {
   private transport: any = null;
   private esploader: any = null;
   private detectedMac: string | null = null;
+  private connectedPort: SerialPort | null = null;
 
   private async getEsptool() {
     try {
@@ -42,7 +44,9 @@ export class WebSerialFlasher implements FlasherAdapter {
 
     try {
       this.transport = new Transport(port);
+      this.connectedPort = port;
       this.detectedMac = null;
+      this.logEvent('open_start', { portInfo: this.safeGetPortInfo(port) });
 
       const terminal = {
         clean() {},
@@ -75,12 +79,15 @@ export class WebSerialFlasher implements FlasherAdapter {
         throw new Error('Could not find ESPLoader main function');
       }
 
+      this.logEvent('open_end', { portInfo: this.safeGetPortInfo(port) });
+
     } catch (err: any) {
       // Clean up if sync fails
       if (this.transport) {
         try { await this.transport.disconnect(); } catch (e) {}
         this.transport = null;
       }
+      this.connectedPort = null;
       this.esploader = null;
 
       if (err.message?.includes('Failed to open serial port') || err.name === 'NetworkError') {
@@ -92,6 +99,8 @@ export class WebSerialFlasher implements FlasherAdapter {
   }
 
   async disconnect(): Promise<void> {
+    this.logEvent('disconnect_start', { portInfo: this.safeGetPortInfo(this.connectedPort) });
+
     if (this.transport) {
       try {
         await this.transport.disconnect();
@@ -100,7 +109,15 @@ export class WebSerialFlasher implements FlasherAdapter {
       }
       this.transport = null;
     }
+
+    if (this.connectedPort) {
+      await this.connectedPort.close().catch(() => {});
+      this.connectedPort = null;
+    }
+
     this.esploader = null;
+    await this.delay(250);
+    this.logEvent('disconnect_end', {});
   }
 
   async flash(
@@ -152,6 +169,8 @@ export class WebSerialFlasher implements FlasherAdapter {
       } else if (typeof this.esploader.hardReset === 'function') {
         await this.esploader.hardReset();
       }
+
+      await this.delay(150);
 
     } catch (err: any) {
       if (err.message?.includes('disconnect') || err.message?.includes('NetworkError')) {
@@ -207,6 +226,25 @@ export class WebSerialFlasher implements FlasherAdapter {
     if (match?.[1]) {
       this.detectedMac = this.normalizeMac(match[1]);
     }
+  }
+
+
+
+  private safeGetPortInfo(port: SerialPort | null): { usbVendorId?: number; usbProductId?: number } | null {
+    if (!port) return null;
+    try {
+      return port.getInfo?.() ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private logEvent(event: string, data: Record<string, unknown>) {
+    logSerialLifecycleEvent('flash', event, data);
+  }
+
+  private async delay(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private normalizeMac(mac: unknown): string | null {

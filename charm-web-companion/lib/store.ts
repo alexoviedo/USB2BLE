@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { SerialOwner, SerialPermissionState } from './types';
+import { logSerialLifecycleEvent } from './serialLifecycle';
 
 interface AppState {
   serialOwner: SerialOwner;
@@ -17,7 +18,12 @@ interface AppState {
 export const useAppStore = create<AppState>((set) => ({
   serialOwner: 'none',
   serialPermissionState: 'unknown',
-  setSerialOwner: (owner) => set({ serialOwner: owner }),
+  setSerialOwner: (owner) => set((state) => {
+    if (state.serialOwner !== owner) {
+      logSerialLifecycleEvent('store', 'owner_change', { from: state.serialOwner, to: owner });
+    }
+    return { serialOwner: owner };
+  }),
   setSerialPermissionState: (state) => set({ serialPermissionState: state }),
   
   isSecureContext: false,

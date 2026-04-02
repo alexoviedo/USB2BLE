@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAppStore } from '@/lib/store';
 import { AlertCircle, Terminal, Trash2, Play, Square, Loader2 } from 'lucide-react';
 import { WebSerialMonitor } from '@/lib/adapters/SerialMonitor';
+import { logSerialLifecycleEvent } from '@/lib/serialLifecycle';
 
 export function ConsoleView() {
   const { serialOwner, setSerialOwner, setSerialPermissionState, hasWebSerial, isSecureContext } = useAppStore();
@@ -71,9 +72,16 @@ export function ConsoleView() {
   const handleConnect = async () => {
     if (!monitorRef.current) return;
     
+    if (serialOwner !== 'none' && serialOwner !== 'console') {
+      setErrorMsg(`Serial port is currently owned by ${serialOwner}.`);
+      return;
+    }
+
     setIsConnecting(true);
     setErrorMsg(null);
     setSerialPermissionState('requesting_permission');
+    setSerialOwner('console');
+    logSerialLifecycleEvent('console', 'owner_acquire_requested', {});
     
     try {
       await monitorRef.current.connect(115200);
@@ -83,7 +91,6 @@ export function ConsoleView() {
         ? `VID:0x${(stats.portInfo.usbVendorId ?? 0).toString(16).padStart(4, '0')} PID:0x${(stats.portInfo.usbProductId ?? 0).toString(16).padStart(4, '0')}`
         : 'unknown';
       setPortLabel(label);
-      setSerialOwner('console');
       setSerialPermissionState('permission_granted');
       setIsConnected(true);
       connectStartedAtRef.current = Date.now();
@@ -97,6 +104,12 @@ export function ConsoleView() {
       } else if (err.code === 'PORT_BUSY') {
         setSerialPermissionState('port_busy');
         setErrorMsg('Serial port is busy. Close other tabs or applications using it.');
+      } else if (err.code === 'PORT_DISCONNECTED') {
+        setSerialPermissionState('unknown');
+        setErrorMsg('Serial device disconnected before console attach completed. Reconnect and retry.');
+      } else if (err.code === 'STALE_PORT') {
+        setSerialPermissionState('unknown');
+        setErrorMsg('Selected serial interface became stale. Choose the active runtime port and retry.');
       } else if (err.code === 'STREAM_INACTIVE') {
         setSerialPermissionState('unknown');
         setErrorMsg('Connected to a serial port but no runtime stream became active. Reconnect and select the active runtime interface.');
@@ -117,7 +130,7 @@ export function ConsoleView() {
     }
     
     try {
-      await monitorRef.current.disconnect();
+      await monitorRef.current.disconnect(intentional ? 'manual' : 'error');
     } catch (err) {
       console.error('Error during disconnect', err);
     } finally {
@@ -137,8 +150,8 @@ export function ConsoleView() {
       const startedAt = connectStartedAtRef.current;
       if (!startedAt) return;
       const activeDuration = Date.now() - startedAt;
-      if (rxStats.bytes === 0 && activeDuration > 5000) {
-        setErrorMsg('Serial stream inactive: connected but no data received. Attempting a clean reconnect is recommended.');
+      if (rxStats.bytes === 0 && activeDuration > 10000) {
+        setErrorMsg('Serial stream inactive: connected but no data received after 10s. Attempting a clean reconnect is recommended.');
         handleDisconnect(false);
       }
     }, 500);
