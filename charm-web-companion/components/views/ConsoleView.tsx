@@ -18,6 +18,7 @@ export function ConsoleView() {
   const [rxStats, setRxStats] = useState({ bytes: 0, chunks: 0, reading: false });
   const [portLabel, setPortLabel] = useState<string>('unknown');
   const connectStartedAtRef = useRef<number | null>(null);
+  const [hasInactivityWarning, setHasInactivityWarning] = useState(false);
 
   const monitorRef = useRef<WebSerialMonitor | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
@@ -94,6 +95,7 @@ export function ConsoleView() {
       setSerialPermissionState('permission_granted');
       setIsConnected(true);
       connectStartedAtRef.current = Date.now();
+      setHasInactivityWarning(false);
     } catch (err: any) {
       setSerialOwner('none');
       if (err.code === 'PORT_NOT_SELECTED') {
@@ -138,6 +140,7 @@ export function ConsoleView() {
       releaseConsoleOwnership();
       setRxStats({ bytes: 0, chunks: 0, reading: false });
       connectStartedAtRef.current = null;
+      setHasInactivityWarning(false);
       if (intentional) {
         setErrorMsg(null);
       }
@@ -151,13 +154,12 @@ export function ConsoleView() {
       if (!startedAt) return;
       const activeDuration = Date.now() - startedAt;
       if (rxStats.bytes === 0 && activeDuration > 10000) {
-        setErrorMsg('Serial stream inactive: connected but no data received after 10s. Attempting a clean reconnect is recommended.');
-        handleDisconnect(false);
+        setHasInactivityWarning(true);
       }
     }, 500);
 
     return () => window.clearInterval(timeout);
-  }, [handleDisconnect, isConnected, rxStats.bytes]);
+  }, [isConnected, rxStats.bytes]);
 
   const handleClear = () => {
     setLogs('');
@@ -229,6 +231,16 @@ export function ConsoleView() {
           <div>
             <h3 className="font-medium">Connection Error</h3>
             <p className="text-sm mt-1">{errorMsg}</p>
+          </div>
+        </div>
+      )}
+
+      {hasInactivityWarning && isConnected && !errorMsg && (
+        <div className="bg-amber-50 text-amber-800 p-4 rounded-lg flex items-start gap-3 border border-amber-100 mb-6 shrink-0">
+          <AlertCircle className="w-5 h-5 mt-0.5 shrink-0" />
+          <div>
+            <h3 className="font-medium">No Log Activity Yet</h3>
+            <p className="text-sm mt-1">Connected successfully, but no serial data has been received after 10s. This can be normal if firmware is quiet. If you expected logs, reconnect and reselect the active runtime interface.</p>
           </div>
         </div>
       )}

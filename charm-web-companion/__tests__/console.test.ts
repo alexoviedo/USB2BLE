@@ -126,7 +126,9 @@ describe('WebSerialMonitor', () => {
     const onError = vi.fn();
     monitor.onError(onError);
 
-    mockReadableReader.read.mockRejectedValue(new Error('Device unplugged'));
+    mockReadableReader.read
+      .mockResolvedValueOnce({ value: new Uint8Array([79, 75]), done: false })
+      .mockRejectedValueOnce(new Error('Device unplugged'));
 
     await monitor.connect();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -139,6 +141,9 @@ describe('WebSerialMonitor', () => {
     mockPort.open
       .mockRejectedValueOnce(new DOMException('Port unavailable', 'NetworkError'))
       .mockResolvedValueOnce(undefined);
+    mockReadableReader.read
+      .mockResolvedValueOnce({ value: new Uint8Array([65]), done: false })
+      .mockResolvedValueOnce({ value: undefined, done: true });
 
     await monitor.connect(115200);
 
@@ -152,6 +157,10 @@ describe('WebSerialMonitor', () => {
     };
 
     global.navigator.serial.getPorts = vi.fn().mockResolvedValue([stalePort]);
+
+    mockReadableReader.read
+      .mockResolvedValueOnce({ value: new Uint8Array([65]), done: false })
+      .mockResolvedValueOnce({ value: undefined, done: true });
 
     await monitor.connect();
 
@@ -204,7 +213,9 @@ describe('WebSerialMonitor', () => {
   it('surfaces an error when stream ends unexpectedly', async () => {
     const onError = vi.fn();
     monitor.onError(onError);
-    mockReadableReader.read.mockResolvedValueOnce({ value: undefined, done: true });
+    mockReadableReader.read
+      .mockResolvedValueOnce({ value: new Uint8Array([79, 75]), done: false })
+      .mockResolvedValueOnce({ value: undefined, done: true });
 
     await monitor.connect();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -264,6 +275,69 @@ describe('WebSerialMonitor', () => {
     global.navigator.serial.requestPort = vi.fn().mockRejectedValue(new DOMException('cancel', 'NotFoundError'));
 
     await expect(monitor.connect()).rejects.toMatchObject({ code: 'STALE_PORT' });
+  });
+
+  it('accepts a quiet stream during initial attach without failing connect', async () => {
+    vi.useFakeTimers();
+    let releaseQuietRead: (() => void) | null = null;
+    const quietReader = {
+      read: vi.fn(() => new Promise((resolve) => {
+        releaseQuietRead = () => resolve({ value: undefined, done: true });
+      })),
+      releaseLock: vi.fn(),
+      cancel: vi.fn().mockImplementation(async () => {
+        releaseQuietRead?.();
+      }),
+    };
+    const quietPort = {
+      ...mockPort,
+      open: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      readable: { getReader: vi.fn(() => quietReader) },
+      getInfo: vi.fn(() => ({ usbVendorId: 0x2222, usbProductId: 0x4444 })),
+    };
+    global.navigator.serial.getPorts = vi.fn().mockResolvedValue([quietPort]);
+    global.navigator.serial.requestPort = vi.fn().mockRejectedValue(new DOMException('cancel', 'NotFoundError'));
+
+    try {
+      const connectPromise = monitor.connect();
+      await vi.advanceTimersByTimeAsync(4100);
+      await connectPromise;
+
+      expect(quietPort.open).toHaveBeenCalled();
+      expect(monitor.getDiagnostics().isReading).toBe(true);
+
+      await monitor.disconnect();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('supports repeated flash-to-console style connect/disconnect cycles', async () => {
+    vi.useRealTimers();
+    for (let i = 0; i < 3; i++) {
+      const cycleReader = {
+        read: vi.fn()
+          .mockResolvedValueOnce({ value: new Uint8Array([65 + i]), done: false })
+          .mockResolvedValueOnce({ value: undefined, done: true }),
+        releaseLock: vi.fn(),
+        cancel: vi.fn().mockResolvedValue(undefined),
+      };
+      const cyclePort = {
+        ...mockPort,
+        open: vi.fn().mockResolvedValue(undefined),
+        close: vi.fn().mockResolvedValue(undefined),
+        readable: { getReader: vi.fn(() => cycleReader) },
+      };
+      global.navigator.serial.getPorts = vi.fn().mockResolvedValue([]);
+      global.navigator.serial.requestPort = vi.fn().mockResolvedValue(cyclePort);
+
+      await monitor.connect();
+      await monitor.disconnect();
+
+      expect(cyclePort.open).toHaveBeenCalledTimes(1);
+      expect(cyclePort.close).toHaveBeenCalledTimes(1);
+    }
   });
 
 });
