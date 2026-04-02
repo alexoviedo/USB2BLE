@@ -92,9 +92,11 @@ export function ValidateView() {
             </h4>
             <ul className="text-xs text-amber-800 space-y-2 leading-relaxed opacity-90">
               <li>• Pair/reconnect at OS level if controller is not visible.</li>
-              <li>• <strong>Press any button</strong> to activate the controller in the browser.</li>
-              <li>• Browser focus issues may affect visibility; ensure this tab is active.</li>
-              <li className="pt-2 border-t border-amber-200/50 italic">Note: This is a raw HID monitor, not a BLE protocol inspector.</li>
+              <li>• <strong>Press any input</strong> if the browser has not surfaced the controller yet.</li>
+              <li>• Browser focus or reconnect issues may affect visibility; ensure this tab is active.</li>
+              <li className="pt-2 border-t border-amber-200/50 italic">
+                Note: This is a raw HID monitor. It is not a BLE protocol inspector, a HID descriptor inspector, or proof of internal firmware BLE state.
+              </li>
             </ul>
           </div>
         </div>

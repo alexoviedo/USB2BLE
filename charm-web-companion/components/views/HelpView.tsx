@@ -41,15 +41,15 @@ export function HelpView() {
               <Usb className="w-5 h-5" />
               <h3 className="font-semibold text-gray-900 text-sm">Serial Ownership</h3>
             </div>
-            <p className="text-xs text-gray-600 leading-relaxed">
+            <div className="text-xs text-gray-600 leading-relaxed">
               Only one owner can use the serial port at a time. The app enforces this mutual exclusion:
               <ul className="mt-2 space-y-1 list-disc list-inside opacity-80">
                 <li><strong>Flash</strong> owns the port during firmware updates.</li>
                 <li><strong>Console</strong> owns the port during monitoring.</li>
                 <li><strong>Config</strong> owns the port during command sync.</li>
               </ul>
-              You must disconnect one tool before using another.
-            </p>
+              <p className="mt-2">You must disconnect one tool before using another.</p>
+            </div>
           </section>
         </div>
 
@@ -80,6 +80,22 @@ export function HelpView() {
               The device only stores a reference to your mapping bundle (ID, version, integrity) and profile ID.
               <strong>Always export your rich JSON drafts</strong> to your local computer if you want to preserve the full layout for future editing.
             </p>
+          </section>
+
+          <section className="bg-gray-50 p-5 rounded-2xl border border-gray-200 shadow-sm space-y-3">
+            <div className="flex items-center gap-3 text-gray-600">
+              <Database className="w-5 h-5" />
+              <h3 className="font-semibold text-gray-900 text-sm">Same-Site Artifacts</h3>
+            </div>
+            <div className="text-xs text-gray-600 leading-relaxed">
+              In "Same-site manifest" mode, the app expects to find firmware artifacts relative to its deployment:
+              <ul className="mt-2 space-y-1 list-disc list-inside opacity-80">
+                <li>./firmware/manifest.json</li>
+                <li>./firmware/bootloader.bin</li>
+                <li>./firmware/partition-table.bin</li>
+                <li>./firmware/charm.bin</li>
+              </ul>
+            </div>
           </section>
         </div>
       </div>
