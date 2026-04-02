@@ -33,9 +33,9 @@ export function CapabilityBanner() {
         <span>Environment Limitations Detected</span>
       </div>
       <div className="flex gap-4 text-xs opacity-90">
-        {!isSecureContext && <span>â Serve over HTTPS or localhost before using Web Serial features.</span>}
-        {!hasWebSerial && <span>â Use a Chromium-based desktop browser for Web Serial support.</span>}
-        {!hasGamepadApi && <span>â Gamepad API unavailable: Validate view partially disabled.</span>}
+        {!isSecureContext && <span>• Serve over HTTPS or localhost before using Web Serial features.</span>}
+        {!hasWebSerial && <span>• Use a Chromium-based desktop browser for Web Serial support.</span>}
+        {!hasGamepadApi && <span>• Gamepad API unavailable: Validate view partially disabled.</span>}
       </div>
       <div className="text-xs opacity-80 mt-1">
         Device config write/persist is serial-first; BLE config transport is not supported in the current firmware.

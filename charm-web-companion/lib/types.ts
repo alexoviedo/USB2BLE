@@ -1,4 +1,4 @@
-export type SerialOwner = 'none' | 'flash' | 'console';
+export type SerialOwner = 'none' | 'flash' | 'console' | 'config';
 
 export type SerialPermissionState =
   | 'unknown'
