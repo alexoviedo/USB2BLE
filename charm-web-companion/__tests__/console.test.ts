@@ -25,6 +25,7 @@ describe('WebSerialMonitor', () => {
     mockPort = {
       open: vi.fn().mockResolvedValue(undefined),
       close: vi.fn().mockResolvedValue(undefined),
+      setSignals: vi.fn().mockResolvedValue(undefined),
       readable: {
         getReader: vi.fn(() => mockReadableReader),
       },
@@ -75,6 +76,7 @@ describe('WebSerialMonitor', () => {
     await monitor.connect(115200);
 
     expect(mockPort.open).toHaveBeenCalledWith({ baudRate: 115200 });
+    expect(mockPort.setSignals).toHaveBeenCalledWith({ dataTerminalReady: true, requestToSend: false });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(onData).toHaveBeenCalledWith('hello');
@@ -124,5 +126,15 @@ describe('WebSerialMonitor', () => {
 
     expect(onError).toHaveBeenCalled();
     expect(onError.mock.calls[0][0].message).toContain('Device unplugged');
+  });
+
+  it('retries open when runtime port is still re-enumerating', async () => {
+    mockPort.open
+      .mockRejectedValueOnce(new DOMException('Port unavailable', 'NetworkError'))
+      .mockResolvedValueOnce(undefined);
+
+    await monitor.connect(115200);
+
+    expect(mockPort.open).toHaveBeenCalledTimes(2);
   });
 });

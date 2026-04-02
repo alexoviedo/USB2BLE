@@ -20,6 +20,11 @@ export function ConsoleView() {
   const monitorRef = useRef<WebSerialMonitor | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
+  const releaseConsoleOwnership = () => {
+    if (useAppStore.getState().serialOwner === 'console') {
+      setSerialOwner('none');
+    }
+  };
 
   // Initialize monitor once
   useEffect(() => {
@@ -47,10 +52,10 @@ export function ConsoleView() {
     });
 
     return () => {
-      if (monitorRef.current && isConnected) {
-        monitorRef.current.disconnect();
-        setSerialOwner('none');
+      if (monitorRef.current) {
+        monitorRef.current.disconnect().catch(() => {});
       }
+      releaseConsoleOwnership();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -108,7 +113,7 @@ export function ConsoleView() {
       console.error('Error during disconnect', err);
     } finally {
       setIsConnected(false);
-      setSerialOwner('none');
+      releaseConsoleOwnership();
       setRxStats({ bytes: 0, chunks: 0, reading: false });
       if (intentional) {
         setErrorMsg(null);
