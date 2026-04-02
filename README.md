@@ -42,3 +42,4 @@ GitHub Actions is configured to:
 - build and run the host-side unit-test suite
 - build the ESP32-S3 firmware with ESP-IDF
 - publish firmware artifacts (`bootloader.bin`, `partition-table.bin`, `charm.bin`) plus integrity metadata
+- deploy the Charm Web Companion to GitHub Pages: [https://alexoviedo.github.io/USB2BLE/](https://alexoviedo.github.io/USB2BLE/)

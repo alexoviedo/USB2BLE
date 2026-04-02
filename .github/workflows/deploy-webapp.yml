@@ -1,0 +1,126 @@
+name: Deploy Webapp to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build-firmware:
+    name: Build ESP32-S3 Firmware
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build with ESP-IDF
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: latest
+          target: esp32s3
+          command: idf.py build
+
+      - name: Prepare firmware artifacts
+        run: |
+          mkdir -p firmware_artifacts
+          cp build/bootloader/bootloader.bin firmware_artifacts/
+          cp build/partition_table/partition-table.bin firmware_artifacts/
+          cp build/charm.bin firmware_artifacts/
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-esp32s3
+          path: firmware_artifacts/
+          retention-days: 1
+
+  build-webapp:
+    name: Build Webapp
+    needs: build-firmware
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: 'npm'
+          cache-dependency-path: 'charm-web-companion/package-lock.json'
+
+      - name: Install dependencies
+        working-directory: charm-web-companion
+        run: npm ci
+
+      - name: Download firmware artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: firmware-esp32s3
+          path: charm-web-companion/public/firmware
+
+      - name: Generate firmware manifest
+        working-directory: charm-web-companion
+        run: |
+          # Create manifest.json in the public/firmware directory
+          # The schema expected is:
+          # {
+          #   "version": string,
+          #   "build_time": string,
+          #   "commit_sha": string,
+          #   "target": "esp32s3",
+          #   "files": {
+          #     "bootloader": string,
+          #     "partition_table": string,
+          #     "app": string,
+          #   },
+          # }
+
+          VERSION=$(npm pkg get version | tr -d '"')
+          BUILD_TIME=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          COMMIT_SHA=${GITHUB_SHA}
+
+          cat <<EOF > public/firmware/manifest.json
+          {
+            "version": "${VERSION}",
+            "build_time": "${BUILD_TIME}",
+            "commit_sha": "${COMMIT_SHA}",
+            "target": "esp32s3",
+            "files": {
+              "bootloader": "bootloader.bin",
+              "partition_table": "partition-table.bin",
+              "app": "charm.bin"
+            }
+          }
+          EOF
+
+      - name: Build Webapp
+        working-directory: charm-web-companion
+        run: npm run build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: charm-web-companion/out
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build-webapp
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

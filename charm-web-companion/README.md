@@ -31,6 +31,8 @@ Companion static web runtime for the Charm ESP32-S3 firmware project.
 
 ## Build & Static Deployment
 
+The webapp is automatically deployed to GitHub Pages at: [https://alexoviedo.github.io/USB2BLE/](https://alexoviedo.github.io/USB2BLE/)
+
 1.  **Generate static build**:
     ```bash
     npm run build
