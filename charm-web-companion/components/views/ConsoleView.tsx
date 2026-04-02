@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAppStore } from '@/lib/store';
 import { AlertCircle, Terminal, Trash2, Play, Square, Loader2 } from 'lucide-react';
 import { WebSerialMonitor } from '@/lib/adapters/SerialMonitor';
@@ -16,15 +16,16 @@ export function ConsoleView() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [rxStats, setRxStats] = useState({ bytes: 0, chunks: 0, reading: false });
   const [portLabel, setPortLabel] = useState<string>('unknown');
+  const connectStartedAtRef = useRef<number | null>(null);
 
   const monitorRef = useRef<WebSerialMonitor | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
-  const releaseConsoleOwnership = () => {
+  const releaseConsoleOwnership = useCallback(() => {
     if (useAppStore.getState().serialOwner === 'console') {
       setSerialOwner('none');
     }
-  };
+  }, [setSerialOwner]);
 
   // Initialize monitor once
   useEffect(() => {
@@ -85,6 +86,7 @@ export function ConsoleView() {
       setSerialOwner('console');
       setSerialPermissionState('permission_granted');
       setIsConnected(true);
+      connectStartedAtRef.current = Date.now();
     } catch (err: any) {
       setSerialOwner('none');
       if (err.code === 'PORT_NOT_SELECTED') {
@@ -95,6 +97,9 @@ export function ConsoleView() {
       } else if (err.code === 'PORT_BUSY') {
         setSerialPermissionState('port_busy');
         setErrorMsg('Serial port is busy. Close other tabs or applications using it.');
+      } else if (err.code === 'STREAM_INACTIVE') {
+        setSerialPermissionState('unknown');
+        setErrorMsg('Connected to a serial port but no runtime stream became active. Reconnect and select the active runtime interface.');
       } else {
         setSerialPermissionState('unknown');
         setErrorMsg(err.message || 'Failed to connect to serial port.');
@@ -104,7 +109,7 @@ export function ConsoleView() {
     }
   };
 
-  const handleDisconnect = async (intentional = true) => {
+  const handleDisconnect = useCallback(async (intentional = true) => {
     if (!monitorRef.current) {
       setIsConnected(false);
       releaseConsoleOwnership();
@@ -119,11 +124,27 @@ export function ConsoleView() {
       setIsConnected(false);
       releaseConsoleOwnership();
       setRxStats({ bytes: 0, chunks: 0, reading: false });
+      connectStartedAtRef.current = null;
       if (intentional) {
         setErrorMsg(null);
       }
     }
-  };
+  }, [releaseConsoleOwnership]);
+
+  useEffect(() => {
+    if (!isConnected) return;
+    const timeout = window.setInterval(() => {
+      const startedAt = connectStartedAtRef.current;
+      if (!startedAt) return;
+      const activeDuration = Date.now() - startedAt;
+      if (rxStats.bytes === 0 && activeDuration > 5000) {
+        setErrorMsg('Serial stream inactive: connected but no data received. Attempting a clean reconnect is recommended.');
+        handleDisconnect(false);
+      }
+    }, 500);
+
+    return () => window.clearInterval(timeout);
+  }, [handleDisconnect, isConnected, rxStats.bytes]);
 
   const handleClear = () => {
     setLogs('');

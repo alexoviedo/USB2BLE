@@ -5,16 +5,20 @@ export interface SerialMonitorDiagnostics {
   chunksReceived: number;
   isReading: boolean;
   portInfo: { usbVendorId?: number; usbProductId?: number } | null;
+  lastDataAtMs: number | null;
 }
 
 const PREFERRED_PORT_INFO_KEY = 'charm_preferred_port_info';
 const PORT_OPEN_RETRY_DELAYS_MS = [150, 350, 700] as const;
+const INITIAL_ACTIVITY_TIMEOUT_MS = 2500;
+const INITIAL_ACTIVITY_POLL_MS = 50;
 
 type SerialMonitorErrorCode =
   | 'PORT_NOT_SELECTED'
   | 'PERMISSION_DENIED'
   | 'PORT_BUSY'
-  | 'PORT_ERROR';
+  | 'PORT_ERROR'
+  | 'STREAM_INACTIVE';
 
 class SerialMonitorError extends Error {
   readonly code: SerialMonitorErrorCode;
@@ -37,6 +41,7 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
     chunksReceived: 0,
     isReading: false,
     portInfo: null,
+    lastDataAtMs: null,
   };
   private onDataCallback?: (data: string) => void;
   private onErrorCallback?: (error: Error) => void;
@@ -49,8 +54,28 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
       throw new Error('Web Serial API not supported in this browser');
     }
 
-    const port = await this.selectPort();
+    const candidates = await this.selectPortCandidates();
+    const shouldRequireInitialData = candidates.length > 1;
+    let lastError: Error | null = null;
 
+    for (const candidate of candidates) {
+      try {
+        await this.connectToPort(candidate, baudRate, shouldRequireInitialData);
+        return;
+      } catch (error: any) {
+        lastError = error;
+        await this.disconnect().catch(() => {});
+      }
+    }
+
+    if (lastError) {
+      throw lastError;
+    }
+
+    throw new SerialMonitorError('No serial ports available', 'PORT_NOT_SELECTED');
+  }
+
+  private async connectToPort(port: SerialPort, baudRate: number, requireInitialData: boolean): Promise<void> {
     await this.openWithRetry(port, baudRate);
 
     if (!port.readable) {
@@ -70,42 +95,45 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
     this.keepReading = true;
     this.diagnostics.bytesReceived = 0;
     this.diagnostics.chunksReceived = 0;
+    this.diagnostics.lastDataAtMs = null;
     this.decoder = new TextDecoder();
-    this.startReadingLoop();
+    void this.startReadingLoop();
+
+    if (requireInitialData) {
+      await this.waitForInitialActivity(INITIAL_ACTIVITY_TIMEOUT_MS);
+    }
   }
 
-  private async selectPort(): Promise<SerialPort> {
+  private async selectPortCandidates(): Promise<SerialPort[]> {
     const preferred = this.loadPreferredPortInfo();
 
     try {
       const grantedPorts = await navigator.serial.getPorts();
       if (grantedPorts.length > 0) {
-        const preferredPort = preferred
-          ? grantedPorts.find((candidate) => {
-              const info = this.safeGetPortInfo(candidate);
-              return (
-                info?.usbVendorId === preferred.usbVendorId &&
-                info?.usbProductId === preferred.usbProductId
-              );
-            })
-          : null;
+        const portOrder = [...grantedPorts].sort((a, b) => {
+          const aInfo = this.safeGetPortInfo(a);
+          const bInfo = this.safeGetPortInfo(b);
+          const aPreferred = preferred && aInfo
+            ? aInfo.usbVendorId === preferred.usbVendorId && aInfo.usbProductId === preferred.usbProductId
+            : false;
+          const bPreferred = preferred && bInfo
+            ? bInfo.usbVendorId === preferred.usbVendorId && bInfo.usbProductId === preferred.usbProductId
+            : false;
+          if (aPreferred === bPreferred) return 0;
+          return aPreferred ? -1 : 1;
+        });
 
-        const port = preferredPort ?? grantedPorts[0];
-
-        // Sanity check: if the port is already closed but we can't even get its info,
-        // it might be a ghost from a prior session.
-        if (!this.safeGetPortInfo(port)) {
-           throw new Error('Port info unavailable - possibly stale');
+        const validPorts = portOrder.filter((port) => this.safeGetPortInfo(port));
+        if (validPorts.length > 0) {
+          return validPorts;
         }
-
-        return port;
       }
     } catch {
-      // Fall back to explicit request below.
+      // Fall back to explicit permission request below.
     }
 
     try {
-      return await navigator.serial.requestPort();
+      return [await navigator.serial.requestPort()];
     } catch (e: any) {
       if (e.name === 'NotFoundError') {
         throw new SerialMonitorError('No port selected by user', 'PORT_NOT_SELECTED');
@@ -117,7 +145,7 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
     }
   }
 
-  private async startReadingLoop() {
+  private async startReadingLoop(): Promise<void> {
     if (!this.port || !this.port.readable) {
       return;
     }
@@ -138,6 +166,7 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
 
         this.diagnostics.bytesReceived += value.byteLength;
         this.diagnostics.chunksReceived += 1;
+        this.diagnostics.lastDataAtMs = Date.now();
 
         if (this.onDataCallback) {
           const text = this.decoder.decode(value, { stream: true });
@@ -145,6 +174,13 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
             this.onDataCallback(text);
           }
         }
+      }
+
+      if (this.keepReading) {
+        throw new SerialMonitorError(
+          'Serial stream ended unexpectedly. Device may have reset or switched interfaces.',
+          'STREAM_INACTIVE'
+        );
       }
 
       const flush = this.decoder.decode();
@@ -263,6 +299,21 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
         }
       }
     }
+  }
+
+  private async waitForInitialActivity(timeoutMs: number): Promise<void> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (this.diagnostics.bytesReceived > 0) {
+        return;
+      }
+      await this.delay(INITIAL_ACTIVITY_POLL_MS);
+    }
+
+    throw new SerialMonitorError(
+      `Connected to serial port but no data was received within ${timeoutMs}ms. The selected port may be stale or inactive.`,
+      'STREAM_INACTIVE'
+    );
   }
 
   private async ensureActiveConsoleSignals(port: SerialPort): Promise<void> {

@@ -152,4 +152,58 @@ describe('WebSerialMonitor', () => {
     expect(mockPort.open).toHaveBeenCalled();
   });
 
+  it('fails over to another granted port when initial stream is inactive', async () => {
+    const inactiveReader = {
+      read: vi.fn().mockResolvedValue({ value: undefined, done: true }),
+      releaseLock: vi.fn(),
+      cancel: vi.fn().mockResolvedValue(undefined),
+    };
+    const activeReader = {
+      read: vi.fn()
+        .mockResolvedValueOnce({ value: new Uint8Array([111, 107]), done: false })
+        .mockResolvedValueOnce({ value: undefined, done: true }),
+      releaseLock: vi.fn(),
+      cancel: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const inactivePort = {
+      ...mockPort,
+      open: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      readable: { getReader: vi.fn(() => inactiveReader) },
+      getInfo: vi.fn(() => ({ usbVendorId: 0x1111, usbProductId: 0x2222 })),
+    };
+    const activePort = {
+      ...mockPort,
+      open: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      readable: { getReader: vi.fn(() => activeReader) },
+      getInfo: vi.fn(() => ({ usbVendorId: 0x3333, usbProductId: 0x4444 })),
+    };
+    global.navigator.serial.getPorts = vi.fn().mockResolvedValue([inactivePort, activePort]);
+
+    const onData = vi.fn();
+    monitor.onData(onData);
+
+    await monitor.connect();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(inactivePort.open).toHaveBeenCalled();
+    expect(inactivePort.close).toHaveBeenCalled();
+    expect(activePort.open).toHaveBeenCalled();
+    expect(onData).toHaveBeenCalledWith('ok');
+  });
+
+  it('surfaces an error when stream ends unexpectedly', async () => {
+    const onError = vi.fn();
+    monitor.onError(onError);
+    mockReadableReader.read.mockResolvedValueOnce({ value: undefined, done: true });
+
+    await monitor.connect();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(onError).toHaveBeenCalled();
+    expect(onError.mock.calls[0][0].message).toMatch(/stream ended unexpectedly/i);
+  });
+
 });
