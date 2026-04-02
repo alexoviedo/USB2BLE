@@ -271,7 +271,7 @@ bool UsbHostAdapter::InstallHostStack() {
     while (usb_lib_thread_running_.load()) {
       uint32_t event_flags = 0;
       const esp_err_t err = usb_host_lib_handle_events(pdMS_TO_TICKS(250), &event_flags);
-      if (err != ESP_OK) {
+      if (err != ESP_OK && err != 0x107 /* ESP_ERR_TIMEOUT */) {
         std::lock_guard<std::mutex> lock(mutex_);
         EmitStatusLocked(charm::contracts::ContractStatus::kFailed,
                          charm::contracts::AdapterState::kFaulted,

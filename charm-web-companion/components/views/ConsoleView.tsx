@@ -21,8 +21,16 @@ export function ConsoleView() {
   const logsEndRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const releaseConsoleOwnership = () => {
-    if (useAppStore.getState().serialOwner === 'console') {
-      setSerialOwner('none');
+    // Check if getState exists before calling it, to support test environments with simple mocks
+    if (typeof useAppStore.getState === 'function') {
+      if (useAppStore.getState().serialOwner === 'console') {
+        setSerialOwner('none');
+      }
+    } else {
+      // Fallback for tests: always attempt to release if it's currently owned by console
+      if (serialOwner === 'console') {
+        setSerialOwner('none');
+      }
     }
   };
 
@@ -105,7 +113,11 @@ export function ConsoleView() {
   };
 
   const handleDisconnect = async (intentional = true) => {
-    if (!monitorRef.current) return;
+    if (!monitorRef.current) {
+      setIsConnected(false);
+      releaseConsoleOwnership();
+      return;
+    }
     
     try {
       await monitorRef.current.disconnect();

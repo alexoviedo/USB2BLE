@@ -22,6 +22,7 @@ export function FlashView() {
   
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [deviceInfo, setDeviceInfo] = useState<{ chip: string; mac: string } | null>(null);
+  const [isCoolingDown, setIsCoolingDown] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const manualFilesRef = useRef<File[]>([]);
@@ -122,6 +123,8 @@ export function FlashView() {
       );
 
       setFlashState('success');
+      setIsCoolingDown(true);
+      setTimeout(() => setIsCoolingDown(false), 2000);
     } catch (err: any) {
       setErrorMsg(err.message || 'Flash failed');
       setFlashState('error');
@@ -177,16 +180,20 @@ export function FlashView() {
           <CheckCircle2 className="w-5 h-5 mt-0.5 shrink-0" />
           <div className="flex-1">
             <h3 className="font-medium">Flash Successful</h3>
-            <p className="text-sm mt-1">The device has been flashed and reset. You can now switch to the Console view to monitor logs.</p>
+            <p className="text-sm mt-1">
+              {isCoolingDown
+                ? 'The device has been flashed and is now resetting. Please wait a moment...'
+                : 'The device has been flashed and reset. You can now switch to the Console view to monitor logs.'}
+            </p>
           </div>
           <button 
             onClick={() => {
-              // We simulate a tab click by dispatching a custom event or relying on the parent to pass a prop.
-              // Since we don't have a prop, we can just use window location hash or a custom event.
               window.dispatchEvent(new CustomEvent('navigate-tab', { detail: 'console' }));
             }}
-            className="px-3 py-1.5 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 transition-colors"
+            disabled={isCoolingDown}
+            className="px-3 py-1.5 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
           >
+            {isCoolingDown && <Loader2 className="w-4 h-4 animate-spin" />}
             Go to Console
           </button>
         </div>
