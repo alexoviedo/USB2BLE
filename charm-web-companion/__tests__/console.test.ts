@@ -206,4 +206,31 @@ describe('WebSerialMonitor', () => {
     expect(onError.mock.calls[0][0].message).toMatch(/stream ended unexpectedly/i);
   });
 
+  it('does not require initial activity on the last candidate port', async () => {
+    const failingPort = {
+      ...mockPort,
+      open: vi.fn().mockRejectedValue(new DOMException('busy', 'NetworkError')),
+      getInfo: vi.fn(() => ({ usbVendorId: 0x1111, usbProductId: 0x2222 })),
+    };
+    const quietReader = {
+      read: vi.fn(() => new Promise(() => {})),
+      releaseLock: vi.fn(),
+      cancel: vi.fn().mockResolvedValue(undefined),
+    };
+    const lastCandidatePort = {
+      ...mockPort,
+      open: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      readable: { getReader: vi.fn(() => quietReader) },
+      getInfo: vi.fn(() => ({ usbVendorId: 0x3333, usbProductId: 0x4444 })),
+    };
+
+    global.navigator.serial.getPorts = vi.fn().mockResolvedValue([failingPort, lastCandidatePort]);
+
+    await expect(monitor.connect()).resolves.toBeUndefined();
+    expect(lastCandidatePort.open).toHaveBeenCalled();
+
+    await monitor.disconnect();
+  });
+
 });

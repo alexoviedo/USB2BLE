@@ -58,9 +58,15 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
     const shouldRequireInitialData = candidates.length > 1;
     let lastError: Error | null = null;
 
-    for (const candidate of candidates) {
+    for (let i = 0; i < candidates.length; i++) {
+      const candidate = candidates[i];
+      const isLastCandidate = i === candidates.length - 1;
       try {
-        await this.connectToPort(candidate, baudRate, shouldRequireInitialData);
+        await this.connectToPort(
+          candidate,
+          baudRate,
+          shouldRequireInitialData && !isLastCandidate
+        );
         return;
       } catch (error: any) {
         lastError = error;
