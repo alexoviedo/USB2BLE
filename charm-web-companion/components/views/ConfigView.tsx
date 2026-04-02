@@ -55,8 +55,8 @@ export function ConfigView() {
   const [deviceConfig, setDeviceConfig] = useState<any>(null);
 
   // Device Command Inputs (separate from draft as per contract)
-  const [mappingBundle, setMappingBundle] = useState({ bundle_id: 1, version: 1, integrity: 1 });
-  const [profileId, setProfileId] = useState(1);
+  const [mappingBundle, setMappingBundle] = useState({ bundle_id: 0, version: 0, integrity: 0 });
+  const [profileId, setProfileId] = useState(0);
   const [bondingMaterial, setBondingMaterial] = useState<number[]>([]);
 
   const transportRef = useRef(new SerialConfigTransport());
