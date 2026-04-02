@@ -47,6 +47,8 @@ describe('WebSerialMonitor', () => {
       value: true,
       configurable: true,
     });
+
+    global.window.localStorage.clear();
   });
 
   it('throws if Web Serial is not supported', async () => {
@@ -150,22 +152,43 @@ describe('WebSerialMonitor', () => {
     expect(mockPort.open).toHaveBeenCalledTimes(2);
   });
 
-  it('handles stale ports by falling back to requestPort', async () => {
+  it('handles stale granted stream by falling back to requestPort', async () => {
+    const staleReader = {
+      read: vi.fn().mockResolvedValue({ value: undefined, done: true }),
+      releaseLock: vi.fn(),
+      cancel: vi.fn().mockResolvedValue(undefined),
+    };
     const stalePort = {
       ...mockPort,
-      getInfo: vi.fn().mockReturnValue(null), // simulate ghost port with no info
+      open: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      readable: { getReader: vi.fn(() => staleReader) },
+      getInfo: vi.fn(() => ({ usbVendorId: 0x1111, usbProductId: 0x2222 })),
+    };
+
+    const requestedReader = {
+      read: vi.fn()
+        .mockResolvedValueOnce({ value: new Uint8Array([65]), done: false })
+        .mockResolvedValueOnce({ value: undefined, done: true }),
+      releaseLock: vi.fn(),
+      cancel: vi.fn().mockResolvedValue(undefined),
+    };
+    const requestedPort = {
+      ...mockPort,
+      open: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      readable: { getReader: vi.fn(() => requestedReader) },
+      getInfo: vi.fn(() => ({ usbVendorId: 0x3333, usbProductId: 0x4444 })),
     };
 
     global.navigator.serial.getPorts = vi.fn().mockResolvedValue([stalePort]);
-
-    mockReadableReader.read
-      .mockResolvedValueOnce({ value: new Uint8Array([65]), done: false })
-      .mockResolvedValueOnce({ value: undefined, done: true });
+    global.navigator.serial.requestPort = vi.fn().mockResolvedValue(requestedPort);
 
     await monitor.connect();
 
     expect(global.navigator.serial.requestPort).toHaveBeenCalled();
-    expect(mockPort.open).toHaveBeenCalled();
+    expect(requestedPort.open).toHaveBeenCalled();
+    expect(stalePort.close).toHaveBeenCalled();
   });
 
   it('fails over to another granted port when initial stream is inactive', async () => {
@@ -277,7 +300,7 @@ describe('WebSerialMonitor', () => {
     await expect(monitor.connect()).rejects.toMatchObject({ code: 'STALE_PORT' });
   });
 
-  it('accepts a quiet stream during initial attach without failing connect', async () => {
+  it('rejects quiet auto-selected port and surfaces inactive stream', async () => {
     vi.useFakeTimers();
     let releaseQuietRead: (() => void) | null = null;
     const quietReader = {
@@ -300,11 +323,48 @@ describe('WebSerialMonitor', () => {
     global.navigator.serial.requestPort = vi.fn().mockRejectedValue(new DOMException('cancel', 'NotFoundError'));
 
     try {
+      const connectPromise = monitor.connect().catch((error) => {
+        expect(error).toMatchObject({ code: 'STREAM_INACTIVE' });
+        return null;
+      });
+      await vi.advanceTimersByTimeAsync(4100);
+      await connectPromise;
+      expect(quietPort.open).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+
+  it('accepts a quiet stream when user explicitly selects the port', async () => {
+    vi.useFakeTimers();
+    let releaseQuietRead: (() => void) | null = null;
+    const quietReader = {
+      read: vi.fn(() => new Promise((resolve) => {
+        releaseQuietRead = () => resolve({ value: undefined, done: true });
+      })),
+      releaseLock: vi.fn(),
+      cancel: vi.fn().mockImplementation(async () => {
+        releaseQuietRead?.();
+      }),
+    };
+    const requestedQuietPort = {
+      ...mockPort,
+      open: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      readable: { getReader: vi.fn(() => quietReader) },
+      getInfo: vi.fn(() => ({ usbVendorId: 0x7777, usbProductId: 0x8888 })),
+    };
+
+    global.navigator.serial.getPorts = vi.fn().mockResolvedValue([]);
+    global.navigator.serial.requestPort = vi.fn().mockResolvedValue(requestedQuietPort);
+
+    try {
       const connectPromise = monitor.connect();
       await vi.advanceTimersByTimeAsync(4100);
       await connectPromise;
 
-      expect(quietPort.open).toHaveBeenCalled();
+      expect(requestedQuietPort.open).toHaveBeenCalled();
       expect(monitor.getDiagnostics().isReading).toBe(true);
 
       await monitor.disconnect();
@@ -312,7 +372,6 @@ describe('WebSerialMonitor', () => {
       vi.useRealTimers();
     }
   });
-
   it('supports repeated flash-to-console style connect/disconnect cycles', async () => {
     vi.useRealTimers();
     for (let i = 0; i < 3; i++) {

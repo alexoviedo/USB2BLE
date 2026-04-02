@@ -3,30 +3,37 @@
 ```mermaid
 stateDiagram-v2
   [*] --> idle
-  idle --> flash_owned: FlashView startFlash
-  idle --> console_owned: ConsoleView connect
-  idle --> config_owned: ConfigView runDeviceCommand
+  idle --> flash_owner_acquire: FlashView startFlash
+  idle --> console_owner_acquire: ConsoleView connect
+  idle --> config_owner_acquire: ConfigView runDeviceCommand
 
-  flash_owned --> flash_connected: flasher.connect() open_start/open_end
+  flash_owner_acquire --> flash_connected: owner_acquire_succeeded + open_end
   flash_connected --> flash_flashing: write_flash
   flash_flashing --> flash_resetting: hard_reset
-  flash_resetting --> idle: flasher.disconnect() disconnect_end + owner none
+  flash_resetting --> flash_released: disconnect_end
+  flash_released --> idle: owner_release_succeeded
 
-  console_owned --> console_attaching: monitor.connect candidate open_start/open_end
-  console_attaching --> console_streaming: reader_start + data received
-  console_attaching --> idle: STALE_PORT / PORT_BUSY / PORT_DISCONNECTED
-  console_streaming --> idle: manual disconnect / stream end / inactivity
+  console_owner_acquire --> console_candidate_select: granted_candidates_scored + candidate_selected
+  console_candidate_select --> console_opened: open_end
+  console_opened --> console_viable: reader_start + initial activity bytes > 0
+  console_opened --> console_candidate_select: initial_activity_timeout on granted candidate => STREAM_INACTIVE
+  console_opened --> console_quiet_user_selected: initial_activity_timeout on requested candidate
+  console_quiet_user_selected --> console_viable: first byte arrives
+  console_viable --> idle: manual disconnect / owner_release_succeeded
+  console_viable --> idle: reader_done|reader_error => STREAM_INACTIVE
 
-  config_owned --> config_connected: transport.connect open_start/open_end
+  config_owner_acquire --> config_connected: open_end + reader_start
   config_connected --> config_command: sendCommand
-  config_command --> idle: transport.disconnect disconnect_end + owner none
+  config_command --> idle: disconnect_end + owner_release_succeeded
 
-  flash_owned --> flash_owned: ownership lock prevents console/config attach
-  console_owned --> console_owned: ownership lock prevents flash/config attach
-  config_owned --> config_owned: ownership lock prevents flash/console attach
+  flash_owner_acquire --> flash_owner_acquire: ownership lock prevents console/config attach
+  console_owner_acquire --> console_owner_acquire: ownership lock prevents flash/config attach
+  config_owner_acquire --> config_owner_acquire: ownership lock prevents flash/console attach
 ```
 
 ## Key invariants
 - Only one owner can hold serial at a time (`none|flash|console|config`).
-- Every error path attempts deterministic unwind (`reader.cancel`/`releaseLock`/`close`).
-- Structured logs are emitted for owner changes, open/close, reader start/end, and disconnect reasons.
+- Console "Connected" now requires stream viability (`reader_start`) and candidate qualification, not `port.open()` alone.
+- Auto-selected granted ports that remain inactive are treated as `STREAM_INACTIVE` candidates and rejected.
+- Requested ports can remain connected-but-quiet to support firmware that intentionally emits no logs.
+- Every error path attempts deterministic unwind (`reader.cancel`/`releaseLock`/`close`) and emits lifecycle logs with port identity.

@@ -59,6 +59,7 @@ export function ConsoleView() {
         monitorRef.current.disconnect().catch(() => {});
       }
       releaseConsoleOwnership();
+      logSerialLifecycleEvent('console', 'owner_release_succeeded', { reason: 'unmount' });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -82,7 +83,7 @@ export function ConsoleView() {
     setErrorMsg(null);
     setSerialPermissionState('requesting_permission');
     setSerialOwner('console');
-    logSerialLifecycleEvent('console', 'owner_acquire_requested', {});
+    logSerialLifecycleEvent('console', 'owner_acquire_requested', { currentOwner: serialOwner });
     
     try {
       await monitorRef.current.connect(115200);
@@ -93,10 +94,12 @@ export function ConsoleView() {
         : 'unknown';
       setPortLabel(label);
       setSerialPermissionState('permission_granted');
+      logSerialLifecycleEvent('console', 'owner_acquire_succeeded', { identity: stats.portInfo });
       setIsConnected(true);
       connectStartedAtRef.current = Date.now();
       setHasInactivityWarning(false);
     } catch (err: any) {
+      logSerialLifecycleEvent('console', 'owner_acquire_failed', { code: err?.code ?? 'PORT_ERROR' });
       setSerialOwner('none');
       if (err.code === 'PORT_NOT_SELECTED') {
         setSerialPermissionState('request_cancelled');
@@ -128,6 +131,7 @@ export function ConsoleView() {
     if (!monitorRef.current) {
       setIsConnected(false);
       releaseConsoleOwnership();
+      logSerialLifecycleEvent('console', 'owner_release_succeeded', { intentional });
       return;
     }
     
@@ -138,6 +142,7 @@ export function ConsoleView() {
     } finally {
       setIsConnected(false);
       releaseConsoleOwnership();
+      logSerialLifecycleEvent('console', 'owner_release_succeeded', { intentional });
       setRxStats({ bytes: 0, chunks: 0, reading: false });
       connectStartedAtRef.current = null;
       setHasInactivityWarning(false);

@@ -10,6 +10,7 @@ import {
 import { LocalDraft, LocalDraftSchema, MappingBundleRefSchema } from '@/lib/schema';
 import { SerialConfigTransport } from '@/lib/adapters/SerialConfigTransport';
 import { ConfigRequestEnvelope, ConfigResponseEnvelope } from '@/lib/schema';
+import { logSerialLifecycleEvent } from '@/lib/serialLifecycle';
 
 const DEFAULT_DRAFT: LocalDraft = {
   metadata: {
@@ -157,10 +158,12 @@ export function ConfigView() {
     setDeviceStatus(`Executing ${command}...`);
 
     // Explicitly claim owner
+    logSerialLifecycleEvent('config', 'owner_acquire_requested', { currentOwner: serialOwner, command });
     setSerialOwner('config');
 
     try {
       await transportRef.current.connect();
+      logSerialLifecycleEvent('config', 'owner_acquire_succeeded', { command });
 
       const request: ConfigRequestEnvelope = {
         protocol_version: 1,
@@ -188,10 +191,12 @@ export function ConfigView() {
         setDeviceError(`${command} failed: ${response.status} ${response.fault?.category || ''}`);
       }
     } catch (err: any) {
+      logSerialLifecycleEvent('config', 'owner_acquire_failed', { command, message: err?.message ?? 'transport_error' });
       setDeviceError(err.message || 'Transport error');
     } finally {
       await transportRef.current.disconnect();
       setSerialOwner('none');
+      logSerialLifecycleEvent('config', 'owner_release_succeeded', { command });
       setIsConnecting(false);
     }
   };

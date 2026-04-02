@@ -1,18 +1,28 @@
 import { SerialMonitorAdapter } from './types';
-import { logSerialLifecycleEvent } from '../serialLifecycle';
+import {
+  getSerialPortIdentity,
+  loadLastFlashPort,
+  loadPreferredRuntimePort,
+  logSerialLifecycleEvent,
+  portIdentityKey,
+  sameSerialPortIdentity,
+  savePreferredRuntimePort,
+  SerialPortIdentity,
+} from '../serialLifecycle';
 
 export interface SerialMonitorDiagnostics {
   bytesReceived: number;
   chunksReceived: number;
   isReading: boolean;
-  portInfo: { usbVendorId?: number; usbProductId?: number } | null;
+  portInfo: SerialPortIdentity | null;
   lastDataAtMs: number | null;
 }
 
-const PREFERRED_PORT_INFO_KEY = 'charm_preferred_port_info';
 const PORT_OPEN_RETRY_DELAYS_MS = [150, 350, 700] as const;
 const INITIAL_ACTIVITY_TIMEOUT_MS = 4000;
 const INITIAL_ACTIVITY_POLL_MS = 50;
+const GRANTED_PORT_REFRESH_DELAYS_MS = [0, 250, 500, 900] as const;
+const RECENT_FLASH_WINDOW_MS = 15000;
 
 type SerialMonitorErrorCode =
   | 'PORT_NOT_SELECTED'
@@ -37,6 +47,8 @@ type PortCandidate = {
   port: SerialPort;
   source: 'granted' | 'requested';
   index: number;
+  identity: SerialPortIdentity | null;
+  score: number;
 };
 
 export class WebSerialMonitor implements SerialMonitorAdapter {
@@ -46,6 +58,7 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
   private keepReading = true;
   private decoder = new TextDecoder();
   private readLoopPromise: Promise<void> | null = null;
+  private failedCandidateIdentities = new Set<string>();
   private diagnostics: SerialMonitorDiagnostics = {
     bytesReceived: 0,
     chunksReceived: 0,
@@ -63,6 +76,8 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
     if (!navigator.serial) {
       throw new Error('Web Serial API not supported in this browser');
     }
+
+    this.failedCandidateIdentities.clear();
 
     const grantedCandidates = await this.selectGrantedPortCandidates();
     const allCandidates: PortCandidate[] = [...grantedCandidates];
@@ -98,7 +113,8 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
         this.logEvent('candidate_selected', {
           source: candidate.source,
           candidateIndex: candidate.index,
-          portInfo: this.safeGetPortInfo(candidate.port),
+          score: candidate.score,
+          identity: candidate.identity,
         });
 
         const connectionOutcome = await this.connectToPort(candidate, baudRate);
@@ -106,17 +122,20 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
           source: candidate.source,
           candidateIndex: candidate.index,
           initialStreamState: connectionOutcome.initialStreamState,
-          portInfo: this.safeGetPortInfo(candidate.port),
+          identity: candidate.identity,
         });
         return;
       } catch (error: any) {
+        const failedKey = portIdentityKey(candidate.identity);
+        this.failedCandidateIdentities.add(failedKey);
         lastError = error;
         this.logEvent('connect_candidate_failed', {
           code: error?.code ?? 'PORT_ERROR',
           message: error?.message ?? 'Unknown error',
           source: candidate.source,
           candidateIndex: candidate.index,
-          portInfo: this.safeGetPortInfo(candidate.port),
+          score: candidate.score,
+          identity: candidate.identity,
         });
         await this.disconnect('candidate_failed').catch(() => {});
       }
@@ -134,10 +153,10 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
     baudRate: number
   ): Promise<{ initialStreamState: 'active' | 'quiet' }> {
     const { port, source, index } = candidate;
-    const portInfo = this.safeGetPortInfo(port);
-    this.logEvent('open_start', { source, candidateIndex: index, portInfo, baudRate });
+    const portInfo = candidate.identity;
+    this.logEvent('open_start', { source, candidateIndex: index, identity: portInfo, baudRate });
     await this.openWithRetry(port, baudRate);
-    this.logEvent('open_end', { source, candidateIndex: index, portInfo });
+    this.logEvent('open_end', { source, candidateIndex: index, identity: portInfo });
 
     if (!port.readable) {
       await port.close().catch(() => {});
@@ -149,7 +168,6 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
 
     this.port = port;
     this.diagnostics.portInfo = portInfo;
-    this.persistPreferredPort(this.diagnostics.portInfo);
 
     await this.ensureActiveConsoleSignals(port);
 
@@ -160,34 +178,85 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
     this.decoder = new TextDecoder();
     this.readLoopPromise = this.startReadingLoop();
     const initialStreamState = await this.waitForInitialActivity(INITIAL_ACTIVITY_TIMEOUT_MS);
+
+    if (initialStreamState === 'active') {
+      savePreferredRuntimePort(this.diagnostics.portInfo);
+    }
+
+    if (initialStreamState === 'quiet' && source === 'granted') {
+      throw new SerialMonitorError(
+        'Automatically selected serial interface stayed inactive. Choose the active runtime interface.',
+        'STREAM_INACTIVE'
+      );
+    }
+
     return { initialStreamState };
   }
 
   private async selectGrantedPortCandidates(): Promise<PortCandidate[]> {
-    const preferred = this.loadPreferredPortInfo();
+    const preferred = loadPreferredRuntimePort();
+    const flashContext = loadLastFlashPort();
+    const now = Date.now();
+    const recentFlash =
+      flashContext && Number.isFinite(flashContext.flashedAt)
+        ? now - flashContext.flashedAt <= RECENT_FLASH_WINDOW_MS
+        : false;
 
     try {
-      const grantedPorts = await navigator.serial.getPorts();
-      const withInfo = grantedPorts
-        .map((port) => ({ port, info: this.safeGetPortInfo(port) }))
-        .filter((item) => item.info !== null) as Array<{ port: SerialPort; info: { usbVendorId?: number; usbProductId?: number } }>;
+      const grantedPorts = await this.collectGrantedPorts(recentFlash);
 
-      const sorted = withInfo.sort((a, b) => {
-        const aPreferred = preferred
-          ? a.info.usbVendorId === preferred.usbVendorId && a.info.usbProductId === preferred.usbProductId
-          : false;
-        const bPreferred = preferred
-          ? b.info.usbVendorId === preferred.usbVendorId && b.info.usbProductId === preferred.usbProductId
-          : false;
-        if (aPreferred === bPreferred) return 0;
-        return aPreferred ? -1 : 1;
+      const scored = grantedPorts.map((port, index) => {
+        const identity = getSerialPortIdentity(port);
+        let score = 0;
+
+        if (preferred && sameSerialPortIdentity(identity, preferred)) {
+          score += 120;
+        } else if (
+          preferred &&
+          identity?.usbVendorId === preferred.usbVendorId &&
+          identity?.usbProductId === preferred.usbProductId
+        ) {
+          score += 80;
+        }
+
+        if (flashContext?.identity && sameSerialPortIdentity(identity, flashContext.identity)) {
+          score -= 20;
+        }
+
+        if (identity?.serialNumber) {
+          score += 15;
+        }
+
+        if (identity?.usbVendorId != null && identity?.usbProductId != null) {
+          score += 10;
+        }
+
+        if (this.failedCandidateIdentities.has(portIdentityKey(identity))) {
+          score -= 100;
+        }
+
+        return {
+          port,
+          source: 'granted' as const,
+          index,
+          identity,
+          score,
+        };
       });
 
-      return sorted.map((item, index) => ({
-        port: item.port,
-        source: 'granted',
-        index,
-      }));
+      scored.sort((a, b) => b.score - a.score);
+
+      this.logEvent('granted_candidates_scored', {
+        total: scored.length,
+        recentFlash,
+        candidates: scored.map((candidate) => ({
+          index: candidate.index,
+          score: candidate.score,
+          identity: candidate.identity,
+        })),
+      });
+
+      return scored;
     } catch {
       return [];
     }
@@ -200,6 +269,8 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
         port: requested,
         source: 'requested',
         index: 0,
+        identity: getSerialPortIdentity(requested),
+        score: 0,
       };
     } catch (e: any) {
       if (e.name === 'NotFoundError') {
@@ -215,6 +286,34 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
     }
   }
 
+  private async collectGrantedPorts(recentFlash: boolean): Promise<SerialPort[]> {
+    const uniquePorts = new Set<SerialPort>();
+
+    for (const delayMs of GRANTED_PORT_REFRESH_DELAYS_MS) {
+      if (delayMs > 0) {
+        if (!recentFlash && uniquePorts.size > 0) {
+          break;
+        }
+        await this.delay(delayMs);
+      }
+
+      const ports = await navigator.serial.getPorts();
+      ports.forEach((port) => uniquePorts.add(port));
+
+      this.logEvent('granted_ports_snapshot', {
+        delayMs,
+        count: ports.length,
+        ports: ports.map((port) => getSerialPortIdentity(port)),
+      });
+
+      if (!recentFlash) {
+        break;
+      }
+    }
+
+    return Array.from(uniquePorts);
+  }
+
   private async startReadingLoop(): Promise<void> {
     if (!this.port || !this.port.readable) {
       return;
@@ -222,12 +321,13 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
 
     this.reader = this.port.readable.getReader();
     this.diagnostics.isReading = true;
-    this.logEvent('reader_start', { portInfo: this.diagnostics.portInfo });
+    this.logEvent('reader_start', { identity: this.diagnostics.portInfo });
 
     try {
       while (this.keepReading && this.reader) {
         const { value, done } = await this.reader.read();
         if (done) {
+          this.logEvent('reader_done', { reason: 'done_true', identity: this.diagnostics.portInfo });
           break;
         }
 
@@ -259,6 +359,12 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
         this.onDataCallback(flush);
       }
     } catch (error: any) {
+      this.logEvent('reader_error', {
+        message: error?.message ?? 'unknown',
+        code: error?.code ?? 'PORT_ERROR',
+        keepReading: this.keepReading,
+        identity: this.diagnostics.portInfo,
+      });
       if (this.keepReading && this.onErrorCallback) {
         this.onErrorCallback(error);
       }
@@ -272,12 +378,13 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
         bytesReceived: this.diagnostics.bytesReceived,
         chunksReceived: this.diagnostics.chunksReceived,
         keepReading: this.keepReading,
+        identity: this.diagnostics.portInfo,
       });
     }
   }
 
   async disconnect(reason: string = 'manual'): Promise<void> {
-    this.logEvent('disconnect_start', { reason, portInfo: this.diagnostics.portInfo });
+    this.logEvent('disconnect_start', { reason, identity: this.diagnostics.portInfo });
     this.keepReading = false;
 
     if (this.reader) {
@@ -327,33 +434,6 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
 
   onError(callback: (error: Error) => void): void {
     this.onErrorCallback = callback;
-  }
-
-  private safeGetPortInfo(port: SerialPort): { usbVendorId?: number; usbProductId?: number } | null {
-    try {
-      return port.getInfo?.() ?? null;
-    } catch {
-      return null;
-    }
-  }
-
-  private loadPreferredPortInfo(): { usbVendorId?: number; usbProductId?: number } | null {
-    try {
-      const raw = window.localStorage.getItem(PREFERRED_PORT_INFO_KEY);
-      if (!raw) return null;
-      return JSON.parse(raw);
-    } catch {
-      return null;
-    }
-  }
-
-  private persistPreferredPort(portInfo: { usbVendorId?: number; usbProductId?: number } | null) {
-    if (!portInfo) return;
-    try {
-      window.localStorage.setItem(PREFERRED_PORT_INFO_KEY, JSON.stringify(portInfo));
-    } catch {
-      // Ignore persistence issues; monitor can still operate.
-    }
   }
 
   private async openWithRetry(port: SerialPort, baudRate: number): Promise<void> {
@@ -416,7 +496,8 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
       timeoutMs,
       bytesReceived: this.diagnostics.bytesReceived,
       chunksReceived: this.diagnostics.chunksReceived,
-      portInfo: this.diagnostics.portInfo,
+      identity: this.diagnostics.portInfo,
+      reason: 'no_bytes_before_timeout',
     });
     return 'quiet';
   }
