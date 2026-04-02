@@ -49,9 +49,6 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
       throw new Error('Web Serial API not supported in this browser');
     }
 
-    // Small delay to allow OS to re-enumerate after a potential reset
-    await this.delay(500);
-
     const port = await this.selectPort();
 
     await this.openWithRetry(port, baudRate);

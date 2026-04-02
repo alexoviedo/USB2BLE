@@ -152,12 +152,4 @@ describe('WebSerialMonitor', () => {
     expect(mockPort.open).toHaveBeenCalled();
   });
 
-  it('waits for re-enumeration delay on connect', async () => {
-    const start = Date.now();
-    await monitor.connect();
-    const duration = Date.now() - start;
-
-    // Should be at least 500ms based on the delay we added
-    expect(duration).toBeGreaterThanOrEqual(500);
-  });
 });
