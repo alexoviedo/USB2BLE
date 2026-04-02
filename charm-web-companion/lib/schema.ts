@@ -63,6 +63,17 @@ export const MappingBundleRefSchema = z.object({
   integrity: z.number(),
 });
 
+export const ConfigPersistPayloadSchema = z.object({
+  mapping_bundle: MappingBundleRefSchema,
+  profile_id: z.number(),
+  bonding_material: z.array(z.number()).optional(),
+});
+
+export const ConfigLoadPayloadSchema = z.object({
+  mapping_bundle: MappingBundleRefSchema,
+  profile_id: z.number(),
+});
+
 export const CapabilitiesPayloadSchema = z.object({
   protocol_version: z.number(),
   supports_persist: z.boolean(),

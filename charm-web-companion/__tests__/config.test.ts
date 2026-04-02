@@ -43,7 +43,10 @@ describe('SerialConfigTransport', () => {
     } as any;
 
     Object.defineProperty(global.navigator, 'serial', {
-      value: { requestPort: vi.fn().mockResolvedValue(mockPort) },
+      value: {
+        requestPort: vi.fn().mockResolvedValue(mockPort),
+        getPorts: vi.fn().mockResolvedValue([])
+      },
       configurable: true
     });
 
@@ -88,7 +91,7 @@ describe('SerialConfigTransport', () => {
     });
 
     // Simulate receiving the response via the internal parser
-    transport.parseStream(`@CFG:${responseJson}\n`, () => {});
+    (transport as any).parseLine(`@CFG:${responseJson}\n`);
 
     const result: any = await waiterPromise;
     expect(result.status).toBe('kOk');
@@ -103,6 +106,38 @@ describe('SerialConfigTransport', () => {
     const onResponse = vi.fn();
     transport.parseStream('normal log line\n@CFG:{"protocol_version":1,"request_id":1,"command":"config.load","status":"kOk"}\n', onResponse);
     expect(onResponse).toHaveBeenCalled();
+  });
+
+  it('handles malformed @CFG frames gracefully', async () => {
+    const onResponse = vi.fn();
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    transport.parseStream('@CFG:{"invalid": json}\n', onResponse);
+    expect(onResponse).not.toHaveBeenCalled();
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+
+  it('verifies persist request wire format', async () => {
+    mockReader.read.mockResolvedValue({ value: undefined, done: true });
+    await transport.connect();
+
+    const request: any = {
+      protocol_version: 1,
+      request_id: 8,
+      command: 'config.persist',
+      payload: {
+        mapping_bundle: { bundle_id: 11, version: 1, integrity: 22 },
+        profile_id: 1,
+        bonding_material: [1, 2, 3]
+      },
+      integrity: 'CFG1'
+    };
+
+    const promise = transport.sendCommand(request);
+
+    expect(mockWriter.write).toHaveBeenCalledWith(
+      '@CFG:{"protocol_version":1,"request_id":8,"command":"config.persist","payload":{"mapping_bundle":{"bundle_id":11,"version":1,"integrity":22},"profile_id":1,"bonding_material":[1,2,3]},"integrity":"CFG1"}\n'
+    );
   });
 });
 

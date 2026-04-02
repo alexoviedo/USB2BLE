@@ -26,7 +26,13 @@ export class SerialConfigTransport implements ConfigTransportAdapter {
     }
 
     try {
-      this.port = await navigator.serial.requestPort();
+      // Try to reuse an already permitted port first
+      const ports = await navigator.serial.getPorts();
+      if (ports.length > 0) {
+        this.port = ports[0];
+      } else {
+        this.port = await navigator.serial.requestPort();
+      }
     } catch (e: any) {
       if (e.name === 'NotFoundError') {
         throw new ConfigError('No port selected', 'PORT_NOT_SELECTED');
@@ -101,7 +107,7 @@ export class SerialConfigTransport implements ConfigTransportAdapter {
           const lines = this.buffer.split('\n');
           this.buffer = lines.pop() || '';
           for (const line of lines) {
-            this.parseStream(line + '\n', () => {});
+            this.parseLine(line);
           }
         }
       }
@@ -142,8 +148,33 @@ export class SerialConfigTransport implements ConfigTransportAdapter {
     });
   }
 
+  /**
+   * Internal line parser used by the reader loop.
+   * It finds and extracts @CFG: frames from the stream.
+   */
+  private parseLine(line: string): void {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('@CFG:')) {
+      try {
+        const jsonStr = trimmed.substring(5).trim();
+        const json = JSON.parse(jsonStr);
+        const response = ConfigResponseEnvelopeSchema.parse(json);
+
+        const waiter = this.responseWaiters.get(response.request_id);
+        if (waiter) {
+          waiter(response);
+          this.responseWaiters.delete(response.request_id);
+        }
+      } catch (e: any) {
+        console.error('Failed to parse @CFG frame:', e.message);
+      }
+    }
+  }
+
+  /**
+   * External entry point for parsing chunks (for testing or external log monitors).
+   */
   parseStream(chunk: string, onResponse: (response: ConfigResponseEnvelope) => void): void {
-    // Process the chunk line by line if it contains multiple lines
     const lines = chunk.split('\n');
     for (const line of lines) {
       const trimmed = line.trim();
@@ -152,17 +183,9 @@ export class SerialConfigTransport implements ConfigTransportAdapter {
           const jsonStr = trimmed.substring(5).trim();
           const json = JSON.parse(jsonStr);
           const response = ConfigResponseEnvelopeSchema.parse(json);
-
           onResponse(response);
-
-          const waiter = this.responseWaiters.get(response.request_id);
-          if (waiter) {
-            waiter(response);
-            this.responseWaiters.delete(response.request_id);
-          }
         } catch (e: any) {
-          console.error('Failed to parse @CFG frame:', e.message);
-          // We don't throw here to avoid breaking the reader loop for other logs
+          console.error('Failed to parse @CFG frame from stream:', e.message);
         }
       }
     }

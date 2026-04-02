@@ -57,6 +57,7 @@ export function ConfigView() {
   // Device Command Inputs (separate from draft as per contract)
   const [mappingBundle, setMappingBundle] = useState({ bundle_id: 1, version: 1, integrity: 1 });
   const [profileId, setProfileId] = useState(1);
+  const [bondingMaterial, setBondingMaterial] = useState<number[]>([]);
 
   const transportRef = useRef(new SerialConfigTransport());
   const nextRequestId = useRef(1);
@@ -462,7 +463,11 @@ export function ConfigView() {
 
               <div className="space-y-2 pt-4">
                 <button
-                  onClick={() => runDeviceCommand('config.persist', { mapping_bundle: mappingBundle, profile_id: profileId })}
+                  onClick={() => runDeviceCommand('config.persist', {
+                    mapping_bundle: mappingBundle,
+                    profile_id: profileId,
+                    bonding_material: bondingMaterial.length > 0 ? bondingMaterial : undefined
+                  })}
                   disabled={!canUseSerial || isConnecting || serialOwner === 'flash'}
                   className="w-full flex items-center justify-center gap-2 py-2.5 bg-gray-900 text-white rounded-xl text-sm font-semibold hover:bg-gray-800 disabled:opacity-50 transition-all shadow-sm"
                 >
