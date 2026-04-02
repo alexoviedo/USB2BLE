@@ -1,6 +1,7 @@
 import { ConfigTransportAdapter } from './types';
 import { ConfigRequestEnvelope, ConfigResponseEnvelope, ConfigResponseEnvelopeSchema } from '../schema';
 import { ConfigError } from '../types';
+import { logSerialLifecycleEvent } from '../serialLifecycle';
 
 /**
  * SerialConfigTransport handles the framing and transport of @CFG: commands
@@ -16,6 +17,7 @@ export class SerialConfigTransport implements ConfigTransportAdapter {
   private keepReading = true;
   private responseWaiters: Map<number, (res: ConfigResponseEnvelope) => void> = new Map();
   private buffer = '';
+  private readLoopPromise: Promise<void> | null = null;
 
   async connect(baudRate: number = 115200): Promise<void> {
     if (!window.isSecureContext) {
@@ -43,8 +45,10 @@ export class SerialConfigTransport implements ConfigTransportAdapter {
       throw new ConfigError(`Failed to request port: ${e.message}`, 'PORT_ERROR');
     }
 
+    this.logEvent('open_start', { portInfo: this.safeGetPortInfo(this.port), baudRate });
     try {
       await this.port.open({ baudRate });
+      this.logEvent('open_end', { portInfo: this.safeGetPortInfo(this.port), baudRate });
     } catch (e: any) {
       throw new ConfigError('Serial port is busy or unavailable.', 'PORT_BUSY');
     }
@@ -56,36 +60,46 @@ export class SerialConfigTransport implements ConfigTransportAdapter {
 
     // Set up reader
     this.keepReading = true;
-    this.startReading();
+    this.readLoopPromise = this.startReading();
   }
 
   async disconnect(): Promise<void> {
+    this.logEvent('disconnect_start', { portInfo: this.safeGetPortInfo(this.port) });
     this.keepReading = false;
 
     if (this.reader) {
-      await this.reader.cancel();
+      await this.reader.cancel().catch(() => {});
+    }
+
+    if (this.readLoopPromise) {
+      await this.readLoopPromise.catch(() => {});
+      this.readLoopPromise = null;
     }
 
     if (this.readableStreamClosed) {
       await this.readableStreamClosed.catch(() => {});
+      this.readableStreamClosed = null;
     }
 
     if (this.writer) {
-      await this.writer.close();
+      await Promise.resolve(this.writer.close()).catch(() => {});
       this.writer.releaseLock();
+      this.writer = null;
     }
 
     if (this.writableStreamClosed) {
       await this.writableStreamClosed.catch(() => {});
+      this.writableStreamClosed = null;
     }
 
     if (this.port) {
-      await this.port.close();
+      await this.port.close().catch(() => {});
       this.port = null;
     }
 
     this.responseWaiters.clear();
     this.buffer = '';
+    this.logEvent('disconnect_end', {});
   }
 
   private async startReading() {
@@ -113,6 +127,7 @@ export class SerialConfigTransport implements ConfigTransportAdapter {
       }
     } catch (error: any) {
       console.error('Read error in ConfigTransport', error);
+      this.logEvent('reader_error', { message: error?.message ?? 'unknown' });
     } finally {
       if (this.reader) {
         this.reader.releaseLock();
@@ -169,6 +184,21 @@ export class SerialConfigTransport implements ConfigTransportAdapter {
         console.error('Failed to parse @CFG frame:', e.message);
       }
     }
+  }
+
+
+
+  private safeGetPortInfo(port: SerialPort | null): { usbVendorId?: number; usbProductId?: number } | null {
+    if (!port) return null;
+    try {
+      return port.getInfo?.() ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private logEvent(event: string, data: Record<string, unknown>) {
+    logSerialLifecycleEvent('config', event, data);
   }
 
   /**

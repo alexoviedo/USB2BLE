@@ -141,6 +141,16 @@ describe('WebSerialFlasher', () => {
     expect(mockTransport.disconnect).toHaveBeenCalled();
   });
 
+
+  it('disconnect releases transport and underlying port', async () => {
+    mockPort.close = vi.fn().mockResolvedValue(undefined);
+    await flasher.connect();
+    await flasher.disconnect();
+
+    expect(mockTransport.disconnect).toHaveBeenCalled();
+    expect(mockPort.close).toHaveBeenCalled();
+  });
+
   it('flashes successfully and resets', async () => {
     await flasher.connect();
     

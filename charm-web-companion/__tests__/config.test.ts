@@ -62,6 +62,17 @@ describe('SerialConfigTransport', () => {
     expect(mockPort.open).toHaveBeenCalledWith({ baudRate: 115200 });
   });
 
+
+  it('disconnect closes port even when reader cancel throws', async () => {
+    mockReader.read.mockResolvedValue({ value: undefined, done: true });
+    mockReader.cancel.mockRejectedValue(new Error('cancel failed'));
+    await transport.connect();
+    await transport.disconnect();
+
+    expect(mockPort.close).toHaveBeenCalled();
+    expect(mockWriter.releaseLock).toHaveBeenCalled();
+  });
+
   it('rejects oversized frames', async () => {
     await transport.connect();
     const largePayload = 'a'.repeat(2100);
