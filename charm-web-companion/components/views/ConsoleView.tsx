@@ -47,10 +47,10 @@ export function ConsoleView() {
     });
 
     return () => {
-      if (monitorRef.current && isConnected) {
-        monitorRef.current.disconnect();
-        setSerialOwner('none');
+      if (monitorRef.current) {
+        monitorRef.current.disconnect().catch(() => {});
       }
+      setSerialOwner('none');
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

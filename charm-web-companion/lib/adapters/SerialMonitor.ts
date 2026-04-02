@@ -8,6 +8,23 @@ export interface SerialMonitorDiagnostics {
 }
 
 const PREFERRED_PORT_INFO_KEY = 'charm_preferred_port_info';
+const PORT_OPEN_RETRY_DELAYS_MS = [150, 350, 700] as const;
+
+type SerialMonitorErrorCode =
+  | 'PORT_NOT_SELECTED'
+  | 'PERMISSION_DENIED'
+  | 'PORT_BUSY'
+  | 'PORT_ERROR';
+
+class SerialMonitorError extends Error {
+  readonly code: SerialMonitorErrorCode;
+
+  constructor(message: string, code: SerialMonitorErrorCode) {
+    super(message);
+    this.name = 'SerialMonitorError';
+    this.code = code;
+  }
+}
 
 export class WebSerialMonitor implements SerialMonitorAdapter {
   private port: SerialPort | null = null;
@@ -34,24 +51,26 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
 
     const port = await this.selectPort();
 
-    try {
-      await port.open({ baudRate });
-    } catch {
-      throw new Error('Serial port is busy or unavailable. Close other applications using it.');
-    }
+    await this.openWithRetry(port, baudRate);
 
     if (!port.readable) {
       await port.close().catch(() => {});
-      throw new Error('Connected serial port has no readable stream. Reconnect the device and select the active runtime port.');
+      throw new SerialMonitorError(
+        'Connected serial port has no readable stream. Reconnect the device and select the active runtime port.',
+        'PORT_ERROR'
+      );
     }
 
     this.port = port;
     this.diagnostics.portInfo = this.safeGetPortInfo(port);
     this.persistPreferredPort(this.diagnostics.portInfo);
 
+    await this.ensureActiveConsoleSignals(port);
+
     this.keepReading = true;
     this.diagnostics.bytesReceived = 0;
     this.diagnostics.chunksReceived = 0;
+    this.decoder = new TextDecoder();
     this.startReadingLoop();
   }
 
@@ -81,12 +100,12 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
       return await navigator.serial.requestPort();
     } catch (e: any) {
       if (e.name === 'NotFoundError') {
-        throw new Error('No port selected by user');
+        throw new SerialMonitorError('No port selected by user', 'PORT_NOT_SELECTED');
       }
       if (e.name === 'SecurityError') {
-        throw new Error('Permission denied to access serial port');
+        throw new SerialMonitorError('Permission denied to access serial port', 'PERMISSION_DENIED');
       }
-      throw e;
+      throw new SerialMonitorError(e?.message ?? 'Failed to access serial port', 'PORT_ERROR');
     }
   }
 
@@ -158,6 +177,7 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
     }
 
     this.diagnostics.isReading = false;
+    this.decoder = new TextDecoder();
   }
 
   async write(data: string): Promise<void> {
@@ -209,5 +229,47 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
     } catch {
       // Ignore persistence issues; monitor can still operate.
     }
+  }
+
+  private async openWithRetry(port: SerialPort, baudRate: number): Promise<void> {
+    const attempts = [0, ...PORT_OPEN_RETRY_DELAYS_MS];
+
+    for (let i = 0; i < attempts.length; i++) {
+      if (attempts[i] > 0) {
+        await this.delay(attempts[i]);
+      }
+
+      try {
+        await port.open({ baudRate });
+        return;
+      } catch (error: any) {
+        const isLastAttempt = i === attempts.length - 1;
+        if (isLastAttempt) {
+          if (error?.name === 'SecurityError') {
+            throw new SerialMonitorError('Permission denied to access serial port', 'PERMISSION_DENIED');
+          }
+          throw new SerialMonitorError(
+            'Serial port is busy or unavailable. Close other applications using it and retry.',
+            'PORT_BUSY'
+          );
+        }
+      }
+    }
+  }
+
+  private async ensureActiveConsoleSignals(port: SerialPort): Promise<void> {
+    if (typeof port.setSignals !== 'function') {
+      return;
+    }
+
+    try {
+      await port.setSignals({ dataTerminalReady: true, requestToSend: false });
+    } catch {
+      // Some adapters do not support signal toggling. Reading still works without this.
+    }
+  }
+
+  private async delay(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
