@@ -4,6 +4,7 @@ interface SerialPort {
   readable: ReadableStream;
   writable: WritableStream;
   getInfo(): any;
+  setSignals?(signals: { dataTerminalReady?: boolean; requestToSend?: boolean }): Promise<void>;
 }
 
 interface Serial {

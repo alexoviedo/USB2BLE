@@ -14,6 +14,8 @@ export function ConsoleView() {
   const [logs, setLogs] = useState<string>('');
   const [autoScroll, setAutoScroll] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [rxStats, setRxStats] = useState({ bytes: 0, chunks: 0, reading: false });
+  const [portLabel, setPortLabel] = useState<string>('unknown');
 
   const monitorRef = useRef<WebSerialMonitor | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
@@ -24,6 +26,10 @@ export function ConsoleView() {
     monitorRef.current = new WebSerialMonitor();
     
     monitorRef.current.onData((data) => {
+      const stats = monitorRef.current?.getDiagnostics();
+      if (stats) {
+        setRxStats({ bytes: stats.bytesReceived, chunks: stats.chunksReceived, reading: stats.isReading });
+      }
       setLogs((prev) => {
         const newLogs = prev + data;
         // Keep last 50,000 characters to prevent memory issues
@@ -36,6 +42,7 @@ export function ConsoleView() {
 
     monitorRef.current.onError((error) => {
       setErrorMsg(error.message);
+      setRxStats((prev) => ({ ...prev, reading: false }));
       handleDisconnect(false); // Force disconnect on error (e.g., unplug)
     });
 
@@ -64,6 +71,12 @@ export function ConsoleView() {
     
     try {
       await monitorRef.current.connect(115200);
+      const stats = monitorRef.current.getDiagnostics();
+      setRxStats({ bytes: stats.bytesReceived, chunks: stats.chunksReceived, reading: stats.isReading });
+      const label = stats.portInfo
+        ? `VID:0x${(stats.portInfo.usbVendorId ?? 0).toString(16).padStart(4, '0')} PID:0x${(stats.portInfo.usbProductId ?? 0).toString(16).padStart(4, '0')}`
+        : 'unknown';
+      setPortLabel(label);
       setSerialOwner('console');
       setSerialPermissionState('permission_granted');
       setIsConnected(true);
@@ -96,6 +109,7 @@ export function ConsoleView() {
     } finally {
       setIsConnected(false);
       setSerialOwner('none');
+      setRxStats({ bytes: 0, chunks: 0, reading: false });
       if (intentional) {
         setErrorMsg(null);
       }
@@ -199,6 +213,8 @@ export function ConsoleView() {
             {isConnected ? 'Connected' : 'Disconnected'}
           </span>
           <span>115200 baud</span>
+          <span>port {portLabel}</span>
+          <span>rx {rxStats.bytes} B / {rxStats.chunks} chunks</span>
         </div>
         <label className="flex items-center gap-2 cursor-pointer hover:text-gray-700 transition-colors">
           <input 
