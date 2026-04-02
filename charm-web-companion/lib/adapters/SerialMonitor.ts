@@ -1,12 +1,26 @@
 import { SerialMonitorAdapter } from './types';
 
+export interface SerialMonitorDiagnostics {
+  bytesReceived: number;
+  chunksReceived: number;
+  isReading: boolean;
+  portInfo: { usbVendorId?: number; usbProductId?: number } | null;
+}
+
+const PREFERRED_PORT_INFO_KEY = 'charm_preferred_port_info';
+
 export class WebSerialMonitor implements SerialMonitorAdapter {
   private port: SerialPort | null = null;
-  private reader: ReadableStreamDefaultReader<string> | null = null;
-  private writer: WritableStreamDefaultWriter<string> | null = null;
-  private readableStreamClosed: Promise<void> | null = null;
-  private writableStreamClosed: Promise<void> | null = null;
+  private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  private writer: WritableStreamDefaultWriter<Uint8Array> | null = null;
   private keepReading = true;
+  private decoder = new TextDecoder();
+  private diagnostics: SerialMonitorDiagnostics = {
+    bytesReceived: 0,
+    chunksReceived: 0,
+    isReading: false,
+    portInfo: null,
+  };
   private onDataCallback?: (data: string) => void;
   private onErrorCallback?: (error: Error) => void;
 
@@ -18,8 +32,53 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
       throw new Error('Web Serial API not supported in this browser');
     }
 
+    const port = await this.selectPort();
+
     try {
-      this.port = await navigator.serial.requestPort();
+      await port.open({ baudRate });
+    } catch {
+      throw new Error('Serial port is busy or unavailable. Close other applications using it.');
+    }
+
+    if (!port.readable) {
+      await port.close().catch(() => {});
+      throw new Error('Connected serial port has no readable stream. Reconnect the device and select the active runtime port.');
+    }
+
+    this.port = port;
+    this.diagnostics.portInfo = this.safeGetPortInfo(port);
+    this.persistPreferredPort(this.diagnostics.portInfo);
+
+    this.keepReading = true;
+    this.diagnostics.bytesReceived = 0;
+    this.diagnostics.chunksReceived = 0;
+    this.startReadingLoop();
+  }
+
+  private async selectPort(): Promise<SerialPort> {
+    const preferred = this.loadPreferredPortInfo();
+
+    try {
+      const grantedPorts = await navigator.serial.getPorts();
+      if (grantedPorts.length > 0) {
+        const preferredPort = preferred
+          ? grantedPorts.find((candidate) => {
+              const info = this.safeGetPortInfo(candidate);
+              return (
+                info?.usbVendorId === preferred.usbVendorId &&
+                info?.usbProductId === preferred.usbProductId
+              );
+            })
+          : null;
+
+        return preferredPort ?? grantedPorts[0];
+      }
+    } catch {
+      // Fall back to explicit request below.
+    }
+
+    try {
+      return await navigator.serial.requestPort();
     } catch (e: any) {
       if (e.name === 'NotFoundError') {
         throw new Error('No port selected by user');
@@ -29,39 +88,48 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
       }
       throw e;
     }
-
-    try {
-      await this.port.open({ baudRate });
-    } catch (e: any) {
-      throw new Error('Serial port is busy or unavailable. Close other applications using it.');
-    }
-
-    this.keepReading = true;
-    this.startReading();
   }
 
-  private async startReading() {
-    if (!this.port || !this.port.readable) return;
+  private async startReadingLoop() {
+    if (!this.port || !this.port.readable) {
+      return;
+    }
 
-    const textDecoder = new TextDecoderStream();
-    this.readableStreamClosed = this.port.readable.pipeTo(textDecoder.writable);
-    this.reader = textDecoder.readable.getReader();
+    this.reader = this.port.readable.getReader();
+    this.diagnostics.isReading = true;
 
     try {
-      while (this.keepReading) {
+      while (this.keepReading && this.reader) {
         const { value, done } = await this.reader.read();
         if (done) {
           break;
         }
-        if (value && this.onDataCallback) {
-          this.onDataCallback(value);
+
+        if (!value) {
+          continue;
+        }
+
+        this.diagnostics.bytesReceived += value.byteLength;
+        this.diagnostics.chunksReceived += 1;
+
+        if (this.onDataCallback) {
+          const text = this.decoder.decode(value, { stream: true });
+          if (text.length > 0) {
+            this.onDataCallback(text);
+          }
         }
       }
+
+      const flush = this.decoder.decode();
+      if (flush.length > 0 && this.onDataCallback) {
+        this.onDataCallback(flush);
+      }
     } catch (error: any) {
-      if (this.onErrorCallback) {
+      if (this.keepReading && this.onErrorCallback) {
         this.onErrorCallback(error);
       }
     } finally {
+      this.diagnostics.isReading = false;
       if (this.reader) {
         this.reader.releaseLock();
         this.reader = null;
@@ -71,28 +139,25 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
 
   async disconnect(): Promise<void> {
     this.keepReading = false;
-    
+
     if (this.reader) {
-      await this.reader.cancel();
-    }
-    
-    if (this.readableStreamClosed) {
-      await this.readableStreamClosed.catch(() => {});
+      await this.reader.cancel().catch(() => {});
+      this.reader.releaseLock();
+      this.reader = null;
     }
 
     if (this.writer) {
-      await this.writer.close();
+      await this.writer.close().catch(() => {});
       this.writer.releaseLock();
-    }
-
-    if (this.writableStreamClosed) {
-      await this.writableStreamClosed.catch(() => {});
+      this.writer = null;
     }
 
     if (this.port) {
-      await this.port.close();
+      await this.port.close().catch(() => {});
       this.port = null;
     }
+
+    this.diagnostics.isReading = false;
   }
 
   async write(data: string): Promise<void> {
@@ -101,12 +166,14 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
     }
 
     if (!this.writer) {
-      const textEncoder = new TextEncoderStream();
-      this.writableStreamClosed = textEncoder.readable.pipeTo(this.port.writable);
-      this.writer = textEncoder.writable.getWriter();
+      this.writer = this.port.writable.getWriter();
     }
 
-    await this.writer.write(data);
+    await this.writer.write(new TextEncoder().encode(data));
+  }
+
+  getDiagnostics(): SerialMonitorDiagnostics {
+    return { ...this.diagnostics };
   }
 
   onData(callback: (data: string) => void): void {
@@ -115,5 +182,32 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
 
   onError(callback: (error: Error) => void): void {
     this.onErrorCallback = callback;
+  }
+
+  private safeGetPortInfo(port: SerialPort): { usbVendorId?: number; usbProductId?: number } | null {
+    try {
+      return port.getInfo?.() ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private loadPreferredPortInfo(): { usbVendorId?: number; usbProductId?: number } | null {
+    try {
+      const raw = window.localStorage.getItem(PREFERRED_PORT_INFO_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
+  private persistPreferredPort(portInfo: { usbVendorId?: number; usbProductId?: number } | null) {
+    if (!portInfo) return;
+    try {
+      window.localStorage.setItem(PREFERRED_PORT_INFO_KEY, JSON.stringify(portInfo));
+    } catch {
+      // Ignore persistence issues; monitor can still operate.
+    }
   }
 }
