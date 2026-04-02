@@ -179,7 +179,7 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
     this.readLoopPromise = this.startReadingLoop();
     const initialStreamState = await this.waitForInitialActivity(INITIAL_ACTIVITY_TIMEOUT_MS);
 
-    if (initialStreamState === 'active') {
+    if (initialStreamState === 'active' || (initialStreamState === 'quiet' && source === 'requested')) {
       savePreferredRuntimePort(this.diagnostics.portInfo);
     }
 
@@ -219,7 +219,11 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
           score += 80;
         }
 
-        if (flashContext?.identity && sameSerialPortIdentity(identity, flashContext.identity)) {
+        if (
+          recentFlash &&
+          flashContext?.identity &&
+          sameSerialPortIdentity(identity, flashContext.identity)
+        ) {
           score -= 20;
         }
 
