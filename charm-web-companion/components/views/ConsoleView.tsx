@@ -105,7 +105,11 @@ export function ConsoleView() {
   };
 
   const handleDisconnect = async (intentional = true) => {
-    if (!monitorRef.current) return;
+    if (!monitorRef.current) {
+      setIsConnected(false);
+      releaseConsoleOwnership();
+      return;
+    }
     
     try {
       await monitorRef.current.disconnect();

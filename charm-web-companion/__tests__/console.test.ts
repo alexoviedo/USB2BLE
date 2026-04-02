@@ -137,4 +137,19 @@ describe('WebSerialMonitor', () => {
 
     expect(mockPort.open).toHaveBeenCalledTimes(2);
   });
+
+  it('handles stale ports by falling back to requestPort', async () => {
+    const stalePort = {
+      ...mockPort,
+      getInfo: vi.fn().mockReturnValue(null), // simulate ghost port with no info
+    };
+
+    global.navigator.serial.getPorts = vi.fn().mockResolvedValue([stalePort]);
+
+    await monitor.connect();
+
+    expect(global.navigator.serial.requestPort).toHaveBeenCalled();
+    expect(mockPort.open).toHaveBeenCalled();
+  });
+
 });

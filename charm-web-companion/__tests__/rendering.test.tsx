@@ -9,7 +9,9 @@ import React from 'react';
 
 // Mock the store
 vi.mock('../lib/store', () => ({
-  useAppStore: vi.fn(),
+  useAppStore: Object.assign(vi.fn(), {
+    getState: vi.fn(),
+  }),
 }));
 
 describe('HelpView', () => {
@@ -51,11 +53,13 @@ describe('ValidateView', () => {
 
 describe('FlashView Rendering', () => {
   beforeEach(() => {
-    (useAppStore as any).mockReturnValue({
+    const mockState = {
       serialOwner: 'none',
       hasWebSerial: true,
       isSecureContext: true,
-    });
+    };
+    (useAppStore as any).mockReturnValue(mockState);
+    (useAppStore.getState as any).mockReturnValue(mockState);
   });
 
   it('renders artifact selection options', () => {
@@ -78,11 +82,15 @@ describe('FlashView Rendering', () => {
 
 describe('ConsoleView Rendering', () => {
   beforeEach(() => {
-    (useAppStore as any).mockReturnValue({
+    const mockState = {
       serialOwner: 'none',
       hasWebSerial: true,
       isSecureContext: true,
-    });
+      setSerialOwner: vi.fn(),
+      setSerialPermissionState: vi.fn(),
+    };
+    (useAppStore as any).mockReturnValue(mockState);
+    (useAppStore.getState as any).mockReturnValue(mockState);
   });
 
   it('renders console controls', () => {
