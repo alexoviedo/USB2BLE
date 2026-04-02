@@ -53,7 +53,6 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
     this.diagnostics.bytesReceived = 0;
     this.diagnostics.chunksReceived = 0;
     this.startReadingLoop();
-    await this.pulseResetOnConnect(port);
   }
 
   private async selectPort(): Promise<SerialPort> {
@@ -125,6 +124,11 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
       if (flush.length > 0 && this.onDataCallback) {
         this.onDataCallback(flush);
       }
+
+      const flush = this.decoder.decode();
+      if (flush.length > 0 && this.onDataCallback) {
+        this.onDataCallback(flush);
+      }
     } catch (error: any) {
       if (this.keepReading && this.onErrorCallback) {
         this.onErrorCallback(error);
@@ -183,26 +187,6 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
 
   onError(callback: (error: Error) => void): void {
     this.onErrorCallback = callback;
-  }
-
-
-  private async pulseResetOnConnect(port: SerialPort): Promise<void> {
-    if (typeof port.setSignals !== 'function') {
-      return;
-    }
-
-    try {
-      await port.setSignals({ dataTerminalReady: false, requestToSend: true });
-      await this.sleep(80);
-      await port.setSignals({ dataTerminalReady: true, requestToSend: false });
-      await this.sleep(150);
-    } catch {
-      // Not all adapters support signal control; monitor still works without it.
-    }
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private safeGetPortInfo(port: SerialPort): { usbVendorId?: number; usbProductId?: number } | null {
