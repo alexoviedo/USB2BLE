@@ -1,0 +1,5 @@
+{
+  "name": "Charm Web Companion",
+  "description": "Companion web application for the Charm ESP32-S3 project. Flash firmware, monitor serial console, configure device, and validate gamepad inputs.",
+  "requestFramePermissions": []
+}
