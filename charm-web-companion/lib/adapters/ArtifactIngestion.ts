@@ -5,7 +5,7 @@ import { FlashError } from '../types';
 export class BrowserArtifactIngestion implements ArtifactIngestionAdapter {
   async fetchSameSiteManifest(): Promise<Manifest> {
     try {
-      const res = await fetch('/firmware/manifest.json');
+      const res = await fetch('firmware/manifest.json');
       if (!res.ok) {
         throw new FlashError(`HTTP ${res.status} fetching manifest.json`, 'MISSING_ARTIFACTS');
       }
@@ -21,7 +21,7 @@ export class BrowserArtifactIngestion implements ArtifactIngestionAdapter {
 
   async fetchSameSiteBinary(filename: string): Promise<ArrayBuffer> {
     try {
-      const res = await fetch(`/firmware/${filename}`);
+      const res = await fetch(`firmware/${filename}`);
       if (!res.ok) {
         throw new FlashError(`HTTP ${res.status} fetching ${filename}`, 'MISSING_ARTIFACTS');
       }

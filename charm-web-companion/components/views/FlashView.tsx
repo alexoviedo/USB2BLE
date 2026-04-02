@@ -133,7 +133,7 @@ export function FlashView() {
   };
 
   const isBusy = flashState === 'loading_artifacts' || flashState === 'connecting' || flashState === 'flashing';
-  const isPortBusy = serialOwner === 'console';
+  const isPortBusy = serialOwner === 'console' || serialOwner === 'config';
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-8">
@@ -157,7 +157,7 @@ export function FlashView() {
           <AlertCircle className="w-5 h-5 mt-0.5 shrink-0" />
           <div>
             <h3 className="font-medium">Serial Port Busy</h3>
-            <p className="text-sm mt-1">The serial port is currently owned by the Console. Please disconnect the Console before flashing.</p>
+            <p className="text-sm mt-1">The serial port is currently owned by the {serialOwner === 'console' ? 'Console' : 'Configuration tool'}. Please disconnect it before flashing.</p>
           </div>
         </div>
       )}

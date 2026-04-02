@@ -161,7 +161,7 @@ export function ConsoleView() {
           <AlertCircle className="w-5 h-5 mt-0.5 shrink-0" />
           <div>
             <h3 className="font-medium">Serial Port Busy</h3>
-            <p className="text-sm mt-1">The serial port is currently owned by the Flasher. Please wait for the flash to complete before connecting the console.</p>
+            <p className="text-sm mt-1">The serial port is currently owned by the {serialOwner === 'flash' ? 'Flasher' : 'Configuration tool'}. Please wait for the operation to complete before connecting the console.</p>
           </div>
         </div>
       )}
