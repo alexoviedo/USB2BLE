@@ -7,6 +7,7 @@ import { BrowserArtifactIngestion } from '@/lib/adapters/ArtifactIngestion';
 import { WebSerialFlasher } from '@/lib/adapters/Flasher';
 import { Manifest } from '@/lib/schema';
 import { FlashError } from '@/lib/types';
+import { logSerialLifecycleEvent } from '@/lib/serialLifecycle';
 
 type SourceMode = 'same-site' | 'manual';
 type FlashState = 'idle' | 'loading_artifacts' | 'artifacts_ready' | 'connecting' | 'flashing' | 'success' | 'error';
@@ -104,10 +105,12 @@ export function FlashView() {
     setDeviceInfo(null);
 
     // Claim serial ownership
+    logSerialLifecycleEvent('flash', 'owner_acquire_requested', { currentOwner: serialOwner });
     setSerialOwner('flash');
 
     try {
       await flasherRef.current.connect();
+      logSerialLifecycleEvent('flash', 'owner_acquire_succeeded', {});
       
       const chip = await flasherRef.current.getChipName() || 'Unknown ESP32';
       const mac = await flasherRef.current.getMacAddress() || 'Unknown MAC';
@@ -126,12 +129,14 @@ export function FlashView() {
       setIsCoolingDown(true);
       setTimeout(() => setIsCoolingDown(false), 2000);
     } catch (err: any) {
+      logSerialLifecycleEvent('flash', 'owner_acquire_failed', { message: err?.message ?? 'flash_failed' });
       setErrorMsg(err.message || 'Flash failed');
       setFlashState('error');
     } finally {
       await flasherRef.current.disconnect();
       // Release serial ownership to allow console usage
       setSerialOwner('none');
+      logSerialLifecycleEvent('flash', 'owner_release_succeeded', {});
     }
   };
 

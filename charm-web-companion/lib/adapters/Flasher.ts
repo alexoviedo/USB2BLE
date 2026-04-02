@@ -1,6 +1,6 @@
 import { FlasherAdapter } from './types';
 import { FlashError } from '../types';
-import { logSerialLifecycleEvent } from '../serialLifecycle';
+import { getSerialPortIdentity, logSerialLifecycleEvent, saveLastFlashPort } from '../serialLifecycle';
 
 const MAC_REGEX = /(?:^|\b)([0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5})(?:\b|$)/;
 
@@ -46,7 +46,7 @@ export class WebSerialFlasher implements FlasherAdapter {
       this.transport = new Transport(port);
       this.connectedPort = port;
       this.detectedMac = null;
-      this.logEvent('open_start', { portInfo: this.safeGetPortInfo(port) });
+      this.logEvent('open_start', { identity: getSerialPortIdentity(port) });
 
       const terminal = {
         clean() {},
@@ -79,7 +79,7 @@ export class WebSerialFlasher implements FlasherAdapter {
         throw new Error('Could not find ESPLoader main function');
       }
 
-      this.logEvent('open_end', { portInfo: this.safeGetPortInfo(port) });
+      this.logEvent('open_end', { identity: getSerialPortIdentity(port) });
 
     } catch (err: any) {
       // Clean up if sync fails
@@ -99,7 +99,7 @@ export class WebSerialFlasher implements FlasherAdapter {
   }
 
   async disconnect(): Promise<void> {
-    this.logEvent('disconnect_start', { portInfo: this.safeGetPortInfo(this.connectedPort) });
+    this.logEvent('disconnect_start', { identity: getSerialPortIdentity(this.connectedPort) });
 
     if (this.transport) {
       try {
@@ -170,7 +170,9 @@ export class WebSerialFlasher implements FlasherAdapter {
         await this.esploader.hardReset();
       }
 
-      await this.delay(150);
+      await this.delay(250);
+      saveLastFlashPort(getSerialPortIdentity(this.connectedPort));
+      this.logEvent('post_flash_runtime_wait', { waitMs: 250, identity: getSerialPortIdentity(this.connectedPort) });
 
     } catch (err: any) {
       if (err.message?.includes('disconnect') || err.message?.includes('NetworkError')) {
@@ -230,14 +232,6 @@ export class WebSerialFlasher implements FlasherAdapter {
 
 
 
-  private safeGetPortInfo(port: SerialPort | null): { usbVendorId?: number; usbProductId?: number } | null {
-    if (!port) return null;
-    try {
-      return port.getInfo?.() ?? null;
-    } catch {
-      return null;
-    }
-  }
 
   private logEvent(event: string, data: Record<string, unknown>) {
     logSerialLifecycleEvent('flash', event, data);

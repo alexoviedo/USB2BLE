@@ -1,7 +1,12 @@
 import { ConfigTransportAdapter } from './types';
 import { ConfigRequestEnvelope, ConfigResponseEnvelope, ConfigResponseEnvelopeSchema } from '../schema';
 import { ConfigError } from '../types';
-import { logSerialLifecycleEvent } from '../serialLifecycle';
+import {
+  getSerialPortIdentity,
+  loadPreferredRuntimePort,
+  logSerialLifecycleEvent,
+  sameSerialPortIdentity,
+} from '../serialLifecycle';
 
 /**
  * SerialConfigTransport handles the framing and transport of @CFG: commands
@@ -28,10 +33,10 @@ export class SerialConfigTransport implements ConfigTransportAdapter {
     }
 
     try {
-      // Try to reuse an already permitted port first
+      const preferred = loadPreferredRuntimePort();
       const ports = await navigator.serial.getPorts();
       if (ports.length > 0) {
-        this.port = ports[0];
+        this.port = this.selectBestPort(ports, preferred);
       } else {
         this.port = await navigator.serial.requestPort();
       }
@@ -45,10 +50,10 @@ export class SerialConfigTransport implements ConfigTransportAdapter {
       throw new ConfigError(`Failed to request port: ${e.message}`, 'PORT_ERROR');
     }
 
-    this.logEvent('open_start', { portInfo: this.safeGetPortInfo(this.port), baudRate });
+    this.logEvent('open_start', { identity: getSerialPortIdentity(this.port), baudRate });
     try {
       await this.port.open({ baudRate });
-      this.logEvent('open_end', { portInfo: this.safeGetPortInfo(this.port), baudRate });
+      this.logEvent('open_end', { identity: getSerialPortIdentity(this.port), baudRate });
     } catch (e: any) {
       throw new ConfigError('Serial port is busy or unavailable.', 'PORT_BUSY');
     }
@@ -64,7 +69,7 @@ export class SerialConfigTransport implements ConfigTransportAdapter {
   }
 
   async disconnect(): Promise<void> {
-    this.logEvent('disconnect_start', { portInfo: this.safeGetPortInfo(this.port) });
+    this.logEvent('disconnect_start', { identity: getSerialPortIdentity(this.port) });
     this.keepReading = false;
 
     if (this.reader) {
@@ -108,11 +113,15 @@ export class SerialConfigTransport implements ConfigTransportAdapter {
     const textDecoder = new TextDecoderStream();
     this.readableStreamClosed = this.port.readable.pipeTo(textDecoder.writable);
     this.reader = textDecoder.readable.getReader();
+    this.logEvent('reader_start', { identity: getSerialPortIdentity(this.port) });
 
     try {
       while (this.keepReading && this.reader) {
         const result = await this.reader.read();
-        if (!result || result.done) break;
+        if (!result || result.done) {
+          this.logEvent('reader_done', { identity: getSerialPortIdentity(this.port) });
+          break;
+        }
 
         const value = result.value;
         if (value) {
@@ -126,13 +135,13 @@ export class SerialConfigTransport implements ConfigTransportAdapter {
         }
       }
     } catch (error: any) {
-      console.error('Read error in ConfigTransport', error);
       this.logEvent('reader_error', { message: error?.message ?? 'unknown' });
     } finally {
       if (this.reader) {
         this.reader.releaseLock();
         this.reader = null;
       }
+      this.logEvent('reader_end', { identity: getSerialPortIdentity(this.port) });
     }
   }
 
@@ -186,15 +195,25 @@ export class SerialConfigTransport implements ConfigTransportAdapter {
     }
   }
 
-
-
-  private safeGetPortInfo(port: SerialPort | null): { usbVendorId?: number; usbProductId?: number } | null {
-    if (!port) return null;
-    try {
-      return port.getInfo?.() ?? null;
-    } catch {
-      return null;
+  private selectBestPort(ports: SerialPort[], preferred: ReturnType<typeof loadPreferredRuntimePort>): SerialPort {
+    if (!preferred) {
+      return ports[0];
     }
+
+    const exactMatch = ports.find((port) => sameSerialPortIdentity(getSerialPortIdentity(port), preferred));
+    if (exactMatch) {
+      return exactMatch;
+    }
+
+    const byVidPid = ports.find((port) => {
+      const identity = getSerialPortIdentity(port);
+      return (
+        identity?.usbVendorId === preferred.usbVendorId &&
+        identity?.usbProductId === preferred.usbProductId
+      );
+    });
+
+    return byVidPid ?? ports[0];
   }
 
   private logEvent(event: string, data: Record<string, unknown>) {
