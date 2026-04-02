@@ -124,11 +124,6 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
       if (flush.length > 0 && this.onDataCallback) {
         this.onDataCallback(flush);
       }
-
-      const flush = this.decoder.decode();
-      if (flush.length > 0 && this.onDataCallback) {
-        this.onDataCallback(flush);
-      }
     } catch (error: any) {
       if (this.keepReading && this.onErrorCallback) {
         this.onErrorCallback(error);
