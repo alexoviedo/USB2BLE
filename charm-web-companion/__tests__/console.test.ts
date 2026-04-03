@@ -372,6 +372,91 @@ describe('WebSerialMonitor', () => {
       vi.useRealTimers();
     }
   });
+
+  it('accepts a quiet granted port when it matches the preferred runtime port outside the flash window', async () => {
+    vi.useFakeTimers();
+    let releaseQuietRead: (() => void) | null = null;
+    const quietReader = {
+      read: vi.fn(() => new Promise((resolve) => {
+        releaseQuietRead = () => resolve({ value: undefined, done: true });
+      })),
+      releaseLock: vi.fn(),
+      cancel: vi.fn().mockImplementation(async () => {
+        releaseQuietRead?.();
+      }),
+    };
+    const quietIdentity = { usbVendorId: 0x1a86, usbProductId: 0x55d3 };
+    const quietPort = {
+      ...mockPort,
+      open: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      readable: { getReader: vi.fn(() => quietReader) },
+      getInfo: vi.fn(() => quietIdentity),
+    };
+
+    global.window.localStorage.setItem('charm_preferred_runtime_port', JSON.stringify(quietIdentity));
+    global.navigator.serial.getPorts = vi.fn().mockResolvedValue([quietPort]);
+    global.navigator.serial.requestPort = vi.fn().mockRejectedValue(new DOMException('cancel', 'NotFoundError'));
+
+    try {
+      const connectPromise = monitor.connect();
+      await vi.advanceTimersByTimeAsync(4100);
+      await connectPromise;
+
+      expect(quietPort.open).toHaveBeenCalled();
+      expect(global.navigator.serial.requestPort).not.toHaveBeenCalled();
+      expect(monitor.getDiagnostics().isReading).toBe(true);
+
+      await monitor.disconnect();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('still rejects a quiet preferred granted port during the recent flash window', async () => {
+    vi.useFakeTimers();
+    let releaseQuietRead: (() => void) | null = null;
+    const quietReader = {
+      read: vi.fn(() => new Promise((resolve) => {
+        releaseQuietRead = () => resolve({ value: undefined, done: true });
+      })),
+      releaseLock: vi.fn(),
+      cancel: vi.fn().mockImplementation(async () => {
+        releaseQuietRead?.();
+      }),
+    };
+    const quietIdentity = { usbVendorId: 0x1a86, usbProductId: 0x55d3 };
+    const quietPort = {
+      ...mockPort,
+      open: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      readable: { getReader: vi.fn(() => quietReader) },
+      getInfo: vi.fn(() => quietIdentity),
+    };
+
+    global.window.localStorage.setItem('charm_preferred_runtime_port', JSON.stringify(quietIdentity));
+    global.window.localStorage.setItem(
+      'charm_last_flash_port',
+      JSON.stringify({ identity: quietIdentity, flashedAt: Date.now() })
+    );
+    global.navigator.serial.getPorts = vi.fn().mockResolvedValue([quietPort]);
+    global.navigator.serial.requestPort = vi.fn().mockRejectedValue(new DOMException('cancel', 'NotFoundError'));
+
+    try {
+      const connectPromise = monitor.connect().catch((error) => {
+        expect(error).toMatchObject({ code: 'STREAM_INACTIVE' });
+        return null;
+      });
+      await vi.advanceTimersByTimeAsync(6000);
+      await connectPromise;
+
+      expect(quietPort.open).toHaveBeenCalled();
+      expect(global.navigator.serial.requestPort).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 10000);
+
   it('supports repeated flash-to-console style connect/disconnect cycles', async () => {
     vi.useRealTimers();
     for (let i = 0; i < 3; i++) {

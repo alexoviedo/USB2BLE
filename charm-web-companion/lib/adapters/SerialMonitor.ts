@@ -49,6 +49,8 @@ type PortCandidate = {
   index: number;
   identity: SerialPortIdentity | null;
   score: number;
+  preferredMatch: boolean;
+  recentFlash: boolean;
 };
 
 export class WebSerialMonitor implements SerialMonitorAdapter {
@@ -114,6 +116,8 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
           source: candidate.source,
           candidateIndex: candidate.index,
           score: candidate.score,
+          preferredMatch: candidate.preferredMatch,
+          recentFlash: candidate.recentFlash,
           identity: candidate.identity,
         });
 
@@ -178,16 +182,28 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
     this.decoder = new TextDecoder();
     this.readLoopPromise = this.startReadingLoop();
     const initialStreamState = await this.waitForInitialActivity(INITIAL_ACTIVITY_TIMEOUT_MS);
+    const acceptQuietGrantedCandidate = source === 'granted' && candidate.preferredMatch && !candidate.recentFlash;
 
-    if (initialStreamState === 'active' || (initialStreamState === 'quiet' && source === 'requested')) {
+    if (
+      initialStreamState === 'active' ||
+      (initialStreamState === 'quiet' && (source === 'requested' || acceptQuietGrantedCandidate))
+    ) {
       savePreferredRuntimePort(this.diagnostics.portInfo);
     }
 
-    if (initialStreamState === 'quiet' && source === 'granted') {
+    if (initialStreamState === 'quiet' && source === 'granted' && !acceptQuietGrantedCandidate) {
       throw new SerialMonitorError(
         'Automatically selected serial interface stayed inactive. Choose the active runtime interface.',
         'STREAM_INACTIVE'
       );
+    }
+
+    if (initialStreamState === 'quiet' && acceptQuietGrantedCandidate) {
+      this.logEvent('quiet_preferred_granted_candidate_accepted', {
+        source,
+        candidateIndex: index,
+        identity: portInfo,
+      });
     }
 
     return { initialStreamState };
@@ -207,9 +223,10 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
 
       const scored = grantedPorts.map((port, index) => {
         const identity = getSerialPortIdentity(port);
+        const preferredMatch = preferred ? sameSerialPortIdentity(identity, preferred) : false;
         let score = 0;
 
-        if (preferred && sameSerialPortIdentity(identity, preferred)) {
+        if (preferredMatch) {
           score += 120;
         } else if (
           preferred &&
@@ -245,6 +262,8 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
           index,
           identity,
           score,
+          preferredMatch,
+          recentFlash,
         };
       });
 
@@ -256,6 +275,8 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
         candidates: scored.map((candidate) => ({
           index: candidate.index,
           score: candidate.score,
+          preferredMatch: candidate.preferredMatch,
+          recentFlash: candidate.recentFlash,
           identity: candidate.identity,
         })),
       });
@@ -275,6 +296,8 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
         index: 0,
         identity: getSerialPortIdentity(requested),
         score: 0,
+        preferredMatch: false,
+        recentFlash: false,
       };
     } catch (e: any) {
       if (e.name === 'NotFoundError') {
