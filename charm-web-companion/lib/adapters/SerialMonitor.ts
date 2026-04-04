@@ -535,7 +535,9 @@ export class WebSerialMonitor implements SerialMonitorAdapter {
     }
 
     try {
-      await port.setSignals({ dataTerminalReady: true, requestToSend: false });
+      // Leave both lines deasserted so console attach does not hold ESP32 boot
+      // strap/reset lines in a programming state on common USB-UART bridges.
+      await port.setSignals({ dataTerminalReady: false, requestToSend: false });
     } catch {
       // Some adapters do not support signal toggling. Reading still works without this.
     }
