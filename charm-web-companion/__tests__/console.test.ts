@@ -78,7 +78,7 @@ describe('WebSerialMonitor', () => {
     await monitor.connect(115200);
 
     expect(mockPort.open).toHaveBeenCalledWith({ baudRate: 115200 });
-    expect(mockPort.setSignals).toHaveBeenCalledWith({ dataTerminalReady: true, requestToSend: false });
+    expect(mockPort.setSignals).toHaveBeenCalledWith({ dataTerminalReady: false, requestToSend: false });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(onData).toHaveBeenCalledWith('hello');
