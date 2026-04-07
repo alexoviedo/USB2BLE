@@ -630,6 +630,8 @@ bool CompileDocument(const ParsedDocument& parsed, CompiledMappingBundle* bundle
     return false;
   }
 
+  std::array<MappingEntry, kMaxMappingEntries> pending_entries{};
+  std::size_t pending_entry_count = 0;
   std::array<bool, 4> used_axis_targets{};
   std::array<bool, 16> used_button_targets{};
   std::array<bool, kMaxCompilerAnalogSources> used_axis_sources{};
@@ -682,7 +684,7 @@ bool CompileDocument(const ParsedDocument& parsed, CompiledMappingBundle* bundle
     used_axis_targets[target_index] = true;
     used_axis_sources[rule.source_index] = true;
 
-    auto& entry = bundle->entries[bundle->entry_count++];
+    auto& entry = pending_entries[pending_entry_count++];
     entry.source_type = charm::contracts::InputElementType::kAxis;
     entry.source = MakeCompilerSourceHash(entry.source_type,
                                           static_cast<std::uint16_t>(rule.source_index));
@@ -747,7 +749,7 @@ bool CompileDocument(const ParsedDocument& parsed, CompiledMappingBundle* bundle
     used_button_targets[target_index] = true;
     used_button_sources[rule.source_index] = true;
 
-    auto& entry = bundle->entries[bundle->entry_count++];
+    auto& entry = pending_entries[pending_entry_count++];
     entry.source_type = charm::contracts::InputElementType::kButton;
     entry.source = MakeCompilerSourceHash(entry.source_type,
                                           static_cast<std::uint16_t>(rule.source_index));
@@ -772,7 +774,7 @@ bool CompileDocument(const ParsedDocument& parsed, CompiledMappingBundle* bundle
     }
   }
 
-  std::sort(bundle->entries.begin(), bundle->entries.begin() + bundle->entry_count,
+  std::sort(pending_entries.begin(), pending_entries.begin() + pending_entry_count,
             [](const MappingEntry& lhs, const MappingEntry& rhs) {
               if (lhs.source.value != rhs.source.value) {
                 return lhs.source.value < rhs.source.value;
@@ -785,6 +787,13 @@ bool CompileDocument(const ParsedDocument& parsed, CompiledMappingBundle* bundle
               }
               return lhs.target.index < rhs.target.index;
             });
+
+  // Copy the sorted entries into the zeroed bundle storage so any object padding
+  // remains deterministic across toolchains.
+  bundle->entry_count = pending_entry_count;
+  for (std::size_t i = 0; i < pending_entry_count; ++i) {
+    bundle->entries[i] = pending_entries[i];
+  }
 
   bundle->bundle_ref.integrity = ComputeMappingBundleHash(*bundle);
   bundle->bundle_ref.bundle_id =

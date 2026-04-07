@@ -34,6 +34,33 @@ constexpr std::string_view kValidDocument = R"json({
   ]
 })json";
 
+constexpr std::string_view kOutOfOrderDocument = R"json({
+  "version": 1,
+  "global": {
+    "scale": 1.0,
+    "deadzone": 0.0,
+    "clamp_min": -1.0,
+    "clamp_max": 1.0
+  },
+  "axes": [
+    {
+      "target": "move_y",
+      "source_index": 1,
+      "scale": 1.0,
+      "deadzone": 0.0,
+      "invert": false
+    },
+    {
+      "target": "move_x",
+      "source_index": 0,
+      "scale": 1.0,
+      "deadzone": 0.0,
+      "invert": false
+    }
+  ],
+  "buttons": []
+})json";
+
 MappingConfigDocument MakeDocument(std::string_view text) {
   return {
       .bytes = reinterpret_cast<const std::uint8_t*>(text.data()),
@@ -53,6 +80,19 @@ TEST(ConfigCompilerTest, CompilesValidDocumentDeterministically) {
   ASSERT_EQ(second.status, charm::contracts::ContractStatus::kOk);
   EXPECT_EQ(std::memcmp(&first.bundle, &second.bundle, sizeof(first.bundle)), 0);
   EXPECT_EQ(first.bundle.bundle_ref.integrity, ComputeMappingBundleHash(first.bundle));
+}
+
+TEST(ConfigCompilerTest, CompilesSortedBundleDeterministicallyWhenInputOrderDiffers) {
+  DefaultConfigCompiler compiler;
+
+  const auto first = compiler.CompileConfig({.document = MakeDocument(kOutOfOrderDocument)});
+  const auto second = compiler.CompileConfig({.document = MakeDocument(kOutOfOrderDocument)});
+
+  ASSERT_EQ(first.status, charm::contracts::ContractStatus::kOk);
+  ASSERT_EQ(second.status, charm::contracts::ContractStatus::kOk);
+  ASSERT_EQ(first.bundle.entry_count, 2u);
+  EXPECT_EQ(std::memcmp(&first.bundle, &second.bundle, sizeof(first.bundle)), 0);
+  EXPECT_LT(first.bundle.entries[0].source.value, first.bundle.entries[1].source.value);
 }
 
 TEST(ConfigCompilerTest, CompiledBundleCarriesExpectedTransforms) {
