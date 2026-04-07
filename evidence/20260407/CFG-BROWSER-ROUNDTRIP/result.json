@@ -1,0 +1,15 @@
+{
+  "scenario": "CFG-BROWSER-ROUNDTRIP",
+  "date_utc": "2026-04-07T08:49:12Z",
+  "result": "FAIL",
+  "hardware": [
+    "USB Single Serial (cu.wchusbserial5B5E0200881)"
+  ],
+  "firmware_commit": "ce0023b",
+  "notes": "Browser roundtrip on the freshly flashed current build was only a partial pass. Capabilities succeeded, but persist timed out, load failed with kContractViolation (reason 0), clear timed out after confirmation, and load-after-clear failed with the same contract violation.",
+  "evidence": [
+    "commands.txt",
+    "artifacts/20260407T085246Z-web-root-check.log",
+    "browser-roundtrip-proof.md"
+  ]
+}

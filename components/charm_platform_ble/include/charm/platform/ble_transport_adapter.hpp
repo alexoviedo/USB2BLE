@@ -12,6 +12,17 @@
 
 namespace charm::platform {
 
+struct BleProfileContract {
+  charm::contracts::ProfileId profile_id{};
+  const char* profile_name{""};
+  const char* device_name{""};
+  charm::contracts::ReportId report_id{0};
+  std::size_t report_size{0};
+  std::uint16_t appearance{0};
+  const std::uint8_t* report_map{nullptr};
+  std::size_t report_map_size{0};
+};
+
 class BleLifecycleBackend {
  public:
   virtual ~BleLifecycleBackend() = default;
@@ -31,6 +42,7 @@ class BleLifecycleBackend {
 
   virtual bool RegisterStackEventSink(StackEventSink* sink) = 0;
   virtual bool UsesStackEventCallbacks() const = 0;
+  virtual bool ConfigureProfile(const BleProfileContract& contract) = 0;
   virtual bool Start() = 0;
   virtual bool Stop() = 0;
   virtual bool ConfigureReportChannel(std::uint32_t transport_if, std::uint16_t connection_id,
@@ -49,6 +61,8 @@ class BleTransportAdapter : public charm::ports::BleTransportPort,
   // Implement BleTransportPort overrides
   charm::contracts::StartResult Start(const charm::contracts::StartRequest& request) override;
   charm::contracts::StopResult Stop(const charm::contracts::StopRequest& request) override;
+  charm::contracts::SelectProfileResult SelectProfile(
+      const charm::contracts::SelectProfileRequest& request) override;
   charm::ports::NotifyInputReportResult NotifyInputReport(const charm::ports::NotifyInputReportRequest& request) override;
   void SetListener(charm::ports::BleTransportPortListener* listener) override;
 
@@ -83,6 +97,7 @@ class BleTransportAdapter : public charm::ports::BleTransportPort,
   charm::ports::BleTransportPortListener* listener_{nullptr};
   charm::contracts::AdapterState state_{charm::contracts::AdapterState::kStopped};
   std::unique_ptr<BleLifecycleBackend> backend_;
+  BleProfileContract active_profile_contract_{};
   bool advertising_ready_{false};
   bool peer_connected_{false};
   bool report_channel_ready_{false};

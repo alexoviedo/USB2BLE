@@ -8,7 +8,6 @@ namespace charm::core::profile_generic_gamepad {
 namespace {
 
 // Generic Gamepad Profile constants
-constexpr charm::contracts::ProfileId kGenericGamepadProfileId{1};
 constexpr charm::contracts::ReportId kInputReportId{1};
 
 // C-structs used for deterministic byte-wise hashing and transport encoding
@@ -30,7 +29,7 @@ const ProfileCapability kCapabilities[] = {
     ProfileCapability::kSupportsAnalogTriggers,
 };
 
-constexpr const char* kProfileName = "Generic Gamepad";
+constexpr const char* kProfileName = "Generic BLE Gamepad";
 
 std::int8_t ClampAxis(std::int32_t logical_value) {
   // Logical axes might exceed standard int8 bounds.
@@ -51,7 +50,7 @@ std::uint8_t ClampTrigger(std::uint16_t logical_value) {
 GetProfileCapabilitiesResult GetCapabilities() {
   GetProfileCapabilitiesResult result{};
   result.status = charm::contracts::ContractStatus::kOk;
-  result.descriptor.profile_id = kGenericGamepadProfileId;
+  result.descriptor.profile_id = kGenericBleGamepadProfileId;
   result.descriptor.name = kProfileName;
   // Use a simple strlen
   std::size_t name_len = 0;
@@ -59,6 +58,8 @@ GetProfileCapabilitiesResult GetCapabilities() {
     name_len++;
   }
   result.descriptor.name_length = name_len;
+  result.descriptor.report_id = kInputReportId;
+  result.descriptor.report_size = sizeof(GenericGamepadReport);
   result.descriptor.capabilities = kCapabilities;
   result.descriptor.capability_count = sizeof(kCapabilities) / sizeof(kCapabilities[0]);
   return result;

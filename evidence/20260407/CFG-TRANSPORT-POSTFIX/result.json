@@ -1,0 +1,22 @@
+{
+  "scenario": "CFG-TRANSPORT-POSTFIX",
+  "date_utc": "2026-04-07T08:49:12Z",
+  "result": "PASS",
+  "hardware": [
+    "/dev/cu.wchusbserial5B5E0200881",
+    "/dev/cu.usbmodem5B5E0200881"
+  ],
+  "firmware_commit": "ce0023b",
+  "notes": "Freshly flashed current build. Raw shell probe and repro tool both returned framed config.get_capabilities responses on both visible macOS serial aliases with about 200 ms request-to-frame latency. The earlier raw-probe-wch artifact without a real newline terminator was superseded and is not part of the passing proof set.",
+  "evidence": [
+    "commands.txt",
+    "artifacts/20260407T084916Z-idf-flash-current-build.log",
+    "artifacts/20260407T084949Z-host-serial-ports.log",
+    "artifacts/20260407T084949Z-host-port-metadata.log",
+    "artifacts/20260407T085038Z-raw-probe-wch-get-capabilities-v2.log",
+    "artifacts/20260407T085054Z-raw-probe-usbmodem-get-capabilities-v2.log",
+    "artifacts/20260407T085203Z-repro-tool-wch-get-capabilities-v3.log",
+    "artifacts/20260407T085219Z-repro-tool-usbmodem-get-capabilities-v3.log",
+    "CFG_TRANSPORT_ISOLATION_MATRIX_POSTFIX.md"
+  ]
+}

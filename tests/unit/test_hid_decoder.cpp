@@ -233,3 +233,184 @@ TEST_F(HidDecoderTest, DecodesCrossByteBitsCorrectly) {
   ASSERT_EQ(result.event_count, 1);
   EXPECT_EQ(result.events[0].value, 0xA35);
 }
+
+TEST_F(HidDecoderTest, NormalizesUnsignedGamepadAxesIntoSignedAxisRange) {
+  DecodePlan plan;
+  plan.binding_count = 2;
+
+  plan.bindings[0].report_id = 1;
+  plan.bindings[0].bit_offset = 0;
+  plan.bindings[0].bit_size = 8;
+  plan.bindings[0].element_key_hash.value = 500;
+  plan.bindings[0].element_type = InputElementType::kAxis;
+  plan.bindings[0].logical_min = 0;
+  plan.bindings[0].logical_max = 255;
+
+  plan.bindings[1] = plan.bindings[0];
+  plan.bindings[1].bit_offset = 8;
+  plan.bindings[1].element_key_hash.value = 501;
+
+  std::uint8_t buffer[] = {0x00, 0xFF};
+
+  DecodeReportRequest request = request_;
+  request.decode_plan = &plan;
+  request.report.bytes = buffer;
+  request.report.byte_length = 2;
+  request.report.report_meta.report_id = 1;
+  request.report.report_meta.declared_length = 2;
+
+  auto result = decoder_->DecodeReport(request);
+
+  ASSERT_EQ(result.status, ContractStatus::kOk);
+  ASSERT_EQ(result.event_count, 2);
+  EXPECT_EQ(result.events[0].value, -127);
+  EXPECT_EQ(result.events[1].value, 127);
+}
+
+TEST_F(HidDecoderTest, NormalizesHotasTriggersToByteRange) {
+  DecodePlan plan;
+  plan.binding_count = 1;
+  plan.bindings[0].report_id = 1;
+  plan.bindings[0].bit_offset = 0;
+  plan.bindings[0].bit_size = 16;
+  plan.bindings[0].element_key_hash.value = 600;
+  plan.bindings[0].element_type = InputElementType::kTrigger;
+  plan.bindings[0].logical_min = 0;
+  plan.bindings[0].logical_max = 1023;
+
+  std::uint8_t buffer[] = {0x00, 0x02};  // 512
+
+  DecodeReportRequest request = request_;
+  request.decode_plan = &plan;
+  request.report.bytes = buffer;
+  request.report.byte_length = 2;
+  request.report.report_meta.report_id = 1;
+  request.report.report_meta.declared_length = 2;
+
+  auto result = decoder_->DecodeReport(request);
+
+  ASSERT_EQ(result.status, ContractStatus::kOk);
+  ASSERT_EQ(result.event_count, 1);
+  EXPECT_GE(result.events[0].value, 127);
+  EXPECT_LE(result.events[0].value, 128);
+}
+
+TEST_F(HidDecoderTest, KeyboardArrayEmitsPerKeyPressAndReleaseEvents) {
+  DecodePlan plan;
+  plan.binding_count = 2;
+  for (std::size_t i = 0; i < 2; ++i) {
+    plan.bindings[i].report_id = 1;
+    plan.bindings[i].bit_offset = static_cast<std::uint16_t>(i * 8);
+    plan.bindings[i].bit_size = 8;
+    plan.bindings[i].element_type = InputElementType::kButton;
+    plan.bindings[i].is_array = true;
+    plan.bindings[i].has_usage_range = true;
+    plan.bindings[i].usage_min = 0;
+    plan.bindings[i].usage_max = 0x65;
+    plan.bindings[i].element_key.interface_number = 1;
+    plan.bindings[i].element_key.report_id = 1;
+    plan.bindings[i].element_key.usage_page = 0x07;
+    plan.bindings[i].element_key.collection_index = 1;
+  }
+
+  std::uint8_t press_buffer[] = {0x04, 0x05};
+
+  DecodeReportRequest request = request_;
+  request.decode_plan = &plan;
+  request.report.device_handle.value = 11;
+  request.report.interface_handle.value = 22;
+  request.report.bytes = press_buffer;
+  request.report.byte_length = 2;
+  request.report.report_meta.report_id = 1;
+  request.report.report_meta.declared_length = 2;
+
+  auto press_result = decoder_->DecodeReport(request);
+
+  ASSERT_EQ(press_result.status, ContractStatus::kOk);
+  ASSERT_EQ(press_result.event_count, 2);
+  EXPECT_EQ(press_result.events[0].value, 1);
+  EXPECT_EQ(press_result.events[1].value, 1);
+  EXPECT_NE(press_result.events[0].element_key_hash.value,
+            press_result.events[1].element_key_hash.value);
+
+  std::uint8_t release_buffer[] = {0x00, 0x05};
+  request.report.bytes = release_buffer;
+
+  auto release_result = decoder_->DecodeReport(request);
+
+  ASSERT_EQ(release_result.status, ContractStatus::kOk);
+  ASSERT_EQ(release_result.event_count, 1);
+  EXPECT_EQ(release_result.events[0].value, 0);
+}
+
+TEST_F(HidDecoderTest, DuplicateKeyboardUsageAcrossSlotsIsDeduplicated) {
+  DecodePlan plan;
+  plan.binding_count = 2;
+  for (std::size_t i = 0; i < 2; ++i) {
+    plan.bindings[i].report_id = 1;
+    plan.bindings[i].bit_offset = static_cast<std::uint16_t>(i * 8);
+    plan.bindings[i].bit_size = 8;
+    plan.bindings[i].element_type = InputElementType::kButton;
+    plan.bindings[i].is_array = true;
+    plan.bindings[i].has_usage_range = true;
+    plan.bindings[i].usage_min = 0;
+    plan.bindings[i].usage_max = 0x65;
+    plan.bindings[i].element_key.interface_number = 1;
+    plan.bindings[i].element_key.report_id = 1;
+    plan.bindings[i].element_key.usage_page = 0x07;
+    plan.bindings[i].element_key.collection_index = 1;
+  }
+
+  std::uint8_t buffer[] = {0x04, 0x04};
+
+  DecodeReportRequest request = request_;
+  request.decode_plan = &plan;
+  request.report.device_handle.value = 11;
+  request.report.interface_handle.value = 22;
+  request.report.bytes = buffer;
+  request.report.byte_length = 2;
+  request.report.report_meta.report_id = 1;
+  request.report.report_meta.declared_length = 2;
+
+  auto result = decoder_->DecodeReport(request);
+
+  ASSERT_EQ(result.status, ContractStatus::kOk);
+  EXPECT_EQ(result.event_count, 1);
+}
+
+TEST_F(HidDecoderTest, ResetInterfaceStateClearsKeyboardArrayHistory) {
+  DecodePlan plan;
+  plan.binding_count = 1;
+  plan.bindings[0].report_id = 1;
+  plan.bindings[0].bit_offset = 0;
+  plan.bindings[0].bit_size = 8;
+  plan.bindings[0].element_type = InputElementType::kButton;
+  plan.bindings[0].is_array = true;
+  plan.bindings[0].has_usage_range = true;
+  plan.bindings[0].usage_min = 0;
+  plan.bindings[0].usage_max = 0x65;
+  plan.bindings[0].element_key.usage_page = 0x07;
+  plan.bindings[0].element_key.collection_index = 1;
+
+  std::uint8_t buffer[] = {0x04};
+
+  DecodeReportRequest request = request_;
+  request.decode_plan = &plan;
+  request.report.device_handle.value = 33;
+  request.report.interface_handle.value = 44;
+  request.report.bytes = buffer;
+  request.report.byte_length = 1;
+  request.report.report_meta.report_id = 1;
+  request.report.report_meta.declared_length = 1;
+
+  auto first = decoder_->DecodeReport(request);
+  ASSERT_EQ(first.status, ContractStatus::kOk);
+  ASSERT_EQ(first.event_count, 1);
+
+  decoder_->ResetInterfaceState(charm::contracts::InterfaceHandle{44});
+
+  auto second = decoder_->DecodeReport(request);
+  ASSERT_EQ(second.status, ContractStatus::kOk);
+  ASSERT_EQ(second.event_count, 1);
+  EXPECT_EQ(second.events[0].value, 1);
+}

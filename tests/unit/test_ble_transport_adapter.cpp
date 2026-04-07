@@ -6,6 +6,17 @@ namespace charm::platform::test {
 
 class FakeBleLifecycleBackend final : public charm::platform::BleLifecycleBackend {
  public:
+  bool ConfigureProfile(const charm::platform::BleProfileContract& contract) override {
+    configure_profile_calls++;
+    last_profile_id = contract.profile_id;
+    last_profile_name = contract.profile_name;
+    last_device_name = contract.device_name;
+    last_configured_report_id = contract.report_id;
+    last_configured_report_size = contract.report_size;
+    last_report_map_size = contract.report_map_size;
+    return configure_profile_result;
+  }
+
   bool RegisterStackEventSink(StackEventSink* sink) override {
     sink_ = sink;
     register_calls++;
@@ -54,14 +65,22 @@ class FakeBleLifecycleBackend final : public charm::platform::BleLifecycleBacken
   bool register_result{true};
   bool use_stack_callbacks{false};
   bool configure_result{true};
+  bool configure_profile_result{true};
   bool send_result{true};
   bool report_channel_ready{false};
+  int configure_profile_calls{0};
   int register_calls{0};
   int start_calls{0};
   int stop_calls{0};
   int configure_calls{0};
   int clear_calls{0};
   int send_calls{0};
+  charm::contracts::ProfileId last_profile_id{0};
+  const char* last_profile_name{nullptr};
+  const char* last_device_name{nullptr};
+  charm::contracts::ReportId last_configured_report_id{0};
+  std::size_t last_configured_report_size{0};
+  std::size_t last_report_map_size{0};
   charm::contracts::ReportId last_report_id{0};
   std::size_t last_report_size{0};
   std::uint32_t last_transport_if{0};
@@ -151,11 +170,20 @@ TEST_F(BleTransportAdapterTest, StartSucceedsAndNotifiesListener) {
   charm::contracts::StartRequest req;
   auto result = adapter.Start(req);
   EXPECT_EQ(result.status, charm::contracts::ContractStatus::kOk);
+  EXPECT_EQ(backend_raw->configure_profile_calls, 1);
+  EXPECT_EQ(backend_raw->last_profile_id.value, 1u);
+  EXPECT_STREQ(backend_raw->last_profile_name, "Generic BLE Gamepad");
+  EXPECT_STREQ(backend_raw->last_device_name, "Charm Gamepad");
+  EXPECT_EQ(backend_raw->last_configured_report_id, 1u);
+  EXPECT_EQ(backend_raw->last_configured_report_size, 9u);
   EXPECT_EQ(backend_raw->register_calls, 1);
   EXPECT_EQ(backend_raw->start_calls, 1);
 
   EXPECT_EQ(listener.status_changed_count, 1);
   EXPECT_EQ(listener.last_status.state, charm::contracts::AdapterState::kRunning);
+  EXPECT_EQ(listener.last_status.active_profile.value, 1u);
+  EXPECT_EQ(listener.last_status.active_report_id, 1u);
+  EXPECT_EQ(listener.last_status.active_report_size, 9u);
 }
 
 TEST_F(BleTransportAdapterTest, StopSucceedsAndNotifiesListener) {
@@ -178,7 +206,7 @@ TEST_F(BleTransportAdapterTest, NotifyInputReportIsUnavailableWithoutPeerAndRepo
 
   charm::ports::NotifyInputReportRequest req;
   req.report.report_id = 1;
-  req.report.size = 10;
+  req.report.size = 9;
 
   auto result = adapter.NotifyInputReport(req);
   EXPECT_EQ(result.status, charm::contracts::ContractStatus::kUnavailable);
@@ -202,7 +230,7 @@ TEST_F(BleTransportAdapterTest, StopWhenAlreadyStoppedIsRejected) {
 TEST_F(BleTransportAdapterTest, NotifyWhenStoppedIsRejected) {
   charm::ports::NotifyInputReportRequest req;
   req.report.report_id = 1;
-  req.report.size = 10;
+  req.report.size = 9;
 
   auto result = adapter.NotifyInputReport(req);
   EXPECT_EQ(result.status, charm::contracts::ContractStatus::kRejected);
@@ -227,7 +255,7 @@ TEST_F(BleTransportAdapterTest, StackCallbackModeWaitsForAdvertisingReadyEvent) 
 
   charm::ports::NotifyInputReportRequest notify_request;
   notify_request.report.report_id = 1;
-  notify_request.report.size = 1;
+  notify_request.report.size = 9;
   auto notify_before_ready = adapter.NotifyInputReport(notify_request);
   EXPECT_EQ(notify_before_ready.status, charm::contracts::ContractStatus::kUnavailable);
 
@@ -257,17 +285,81 @@ TEST_F(BleTransportAdapterTest, NotifyInputReportUsesBackendWhenPeerAndReportCha
   adapter.OnPeerConnected(peer);
   adapter.OnReportChannelReady(7, 11, 13, false);
 
-  std::uint8_t bytes[4] = {1, 2, 3, 4};
+  std::uint8_t bytes[9] = {1, 2, 3, 4, 5, 6, 7, 8, 9};
   charm::ports::NotifyInputReportRequest req;
-  req.report.report_id = 2;
+  req.report.report_id = 1;
   req.report.bytes = bytes;
-  req.report.size = 4;
+  req.report.size = sizeof(bytes);
 
   auto result = adapter.NotifyInputReport(req);
   EXPECT_EQ(result.status, charm::contracts::ContractStatus::kOk);
   EXPECT_EQ(backend_raw->configure_calls, 1);
   EXPECT_EQ(backend_raw->send_calls, 1);
-  EXPECT_EQ(backend_raw->last_report_size, 4u);
+  EXPECT_EQ(backend_raw->last_report_size, sizeof(bytes));
+}
+
+TEST_F(BleTransportAdapterTest, SelectXboxProfileConfiguresDistinctBleContract) {
+  const auto result =
+      adapter.SelectProfile({.profile_id = charm::contracts::ProfileId{2}});
+
+  EXPECT_EQ(result.status, charm::contracts::ContractStatus::kOk);
+  EXPECT_EQ(backend_raw->configure_profile_calls, 1);
+  EXPECT_EQ(backend_raw->last_profile_id.value, 2u);
+  EXPECT_STREQ(backend_raw->last_profile_name, "Wireless Xbox Controller");
+  EXPECT_STREQ(backend_raw->last_device_name, "Charm Xbox Controller");
+  EXPECT_EQ(backend_raw->last_configured_report_id, 2u);
+  EXPECT_EQ(backend_raw->last_configured_report_size, 13u);
+}
+
+TEST_F(BleTransportAdapterTest, SelectProfileWhileRunningRestartsBackendWithNewContract) {
+  charm::contracts::StartRequest start_req;
+  ASSERT_EQ(adapter.Start(start_req).status, charm::contracts::ContractStatus::kOk);
+  const auto start_calls_before = backend_raw->start_calls;
+  const auto stop_calls_before = backend_raw->stop_calls;
+
+  const auto result =
+      adapter.SelectProfile({.profile_id = charm::contracts::ProfileId{2}});
+
+  EXPECT_EQ(result.status, charm::contracts::ContractStatus::kOk);
+  EXPECT_EQ(backend_raw->last_profile_id.value, 2u);
+  EXPECT_EQ(backend_raw->start_calls, start_calls_before + 1);
+  EXPECT_EQ(backend_raw->stop_calls, stop_calls_before + 1);
+  EXPECT_EQ(listener.last_status.active_profile.value, 2u);
+  EXPECT_EQ(listener.last_status.active_report_id, 2u);
+  EXPECT_EQ(listener.last_status.active_report_size, 13u);
+}
+
+TEST_F(BleTransportAdapterTest, UnsupportedProfileIsRejected) {
+  const auto result =
+      adapter.SelectProfile({.profile_id = charm::contracts::ProfileId{99}});
+
+  EXPECT_EQ(result.status, charm::contracts::ContractStatus::kRejected);
+  EXPECT_EQ(result.fault_code.category,
+            charm::contracts::ErrorCategory::kUnsupportedCapability);
+  EXPECT_EQ(backend_raw->configure_profile_calls, 0);
+}
+
+TEST_F(BleTransportAdapterTest, NotifyRejectsReportThatDoesNotMatchActiveProfileContract) {
+  charm::contracts::StartRequest start_req;
+  ASSERT_EQ(adapter.Start(start_req).status, charm::contracts::ContractStatus::kOk);
+  ASSERT_EQ(adapter.SelectProfile({.profile_id = charm::contracts::ProfileId{2}}).status,
+            charm::contracts::ContractStatus::kOk);
+
+  charm::ports::BlePeerInfo peer{};
+  adapter.OnPeerConnected(peer);
+  adapter.OnReportChannelReady(7, 11, 13, false);
+
+  std::uint8_t bytes[9] = {};
+  charm::ports::NotifyInputReportRequest req;
+  req.report.report_id = 1;
+  req.report.bytes = bytes;
+  req.report.size = sizeof(bytes);
+
+  const auto result = adapter.NotifyInputReport(req);
+  EXPECT_EQ(result.status, charm::contracts::ContractStatus::kRejected);
+  EXPECT_EQ(result.fault_code.category,
+            charm::contracts::ErrorCategory::kInvalidRequest);
+  EXPECT_EQ(backend_raw->send_calls, 0);
 }
 
 TEST_F(BleTransportAdapterTest, StackCallbacksDriveOrderingForReportChannel) {
@@ -277,11 +369,11 @@ TEST_F(BleTransportAdapterTest, StackCallbacksDriveOrderingForReportChannel) {
 
   backend_raw->EmitAdvertisingReady();
 
-  std::uint8_t bytes[2] = {5, 6};
+  std::uint8_t bytes[9] = {5, 6, 0, 0, 0, 0, 0, 0, 0};
   charm::ports::NotifyInputReportRequest req;
-  req.report.report_id = 8;
+  req.report.report_id = 1;
   req.report.bytes = bytes;
-  req.report.size = 2;
+  req.report.size = sizeof(bytes);
 
   backend_raw->EmitReportChannelReady(3, 10, 99, false);
   auto without_peer = adapter.NotifyInputReport(req);
@@ -315,11 +407,11 @@ TEST_F(BleTransportAdapterTest, NotifyInputReportSurfacesTransportFailure) {
   adapter.OnPeerConnected(peer);
   adapter.OnReportChannelReady(7, 11, 13, true);
 
-  std::uint8_t bytes[2] = {9, 9};
+  std::uint8_t bytes[9] = {9, 9, 0, 0, 0, 0, 0, 0, 0};
   charm::ports::NotifyInputReportRequest req;
-  req.report.report_id = 3;
+  req.report.report_id = 1;
   req.report.bytes = bytes;
-  req.report.size = 2;
+  req.report.size = sizeof(bytes);
 
   auto result = adapter.NotifyInputReport(req);
   EXPECT_EQ(result.status, charm::contracts::ContractStatus::kFailed);
@@ -339,11 +431,11 @@ TEST_F(BleTransportAdapterTest, NotifyTransportFailureFailClosesWhenRecoveryFail
   adapter.OnPeerConnected(peer);
   adapter.OnReportChannelReady(9, 12, 18, true);
 
-  std::uint8_t bytes[1] = {7};
+  std::uint8_t bytes[9] = {7, 0, 0, 0, 0, 0, 0, 0, 0};
   charm::ports::NotifyInputReportRequest req;
-  req.report.report_id = 4;
+  req.report.report_id = 1;
   req.report.bytes = bytes;
-  req.report.size = 1;
+  req.report.size = sizeof(bytes);
 
   auto first = adapter.NotifyInputReport(req);
   EXPECT_EQ(first.status, charm::contracts::ContractStatus::kFailed);
@@ -374,11 +466,11 @@ TEST_F(BleTransportAdapterTest, StackDisconnectClosesReportChannelBeforeNotify) 
   backend_raw->EmitPeerConnected(peer);
   backend_raw->EmitReportChannelReady(4, 5, 6, false);
 
-  std::uint8_t bytes[1] = {1};
+  std::uint8_t bytes[9] = {1, 0, 0, 0, 0, 0, 0, 0, 0};
   charm::ports::NotifyInputReportRequest req;
-  req.report.report_id = 9;
+  req.report.report_id = 1;
   req.report.bytes = bytes;
-  req.report.size = 1;
+  req.report.size = sizeof(bytes);
   EXPECT_EQ(adapter.NotifyInputReport(req).status, charm::contracts::ContractStatus::kOk);
 
   backend_raw->EmitPeerDisconnected(peer);
@@ -396,11 +488,11 @@ TEST_F(BleTransportAdapterTest, RecoveryExhaustionFailClosesAfterBoundedAttempts
   backend_raw->EmitPeerConnected(peer);
   backend_raw->EmitReportChannelReady(1, 2, 3, true);
 
-  std::uint8_t bytes[1] = {2};
+  std::uint8_t bytes[9] = {2, 0, 0, 0, 0, 0, 0, 0, 0};
   charm::ports::NotifyInputReportRequest req;
-  req.report.report_id = 4;
+  req.report.report_id = 1;
   req.report.bytes = bytes;
-  req.report.size = 1;
+  req.report.size = sizeof(bytes);
 
   auto first = adapter.NotifyInputReport(req);
   EXPECT_EQ(first.status, charm::contracts::ContractStatus::kFailed);

@@ -7,6 +7,13 @@ namespace {
 constexpr std::uint32_t kFnvPrime32 = 16777619;
 constexpr std::uint32_t kFnvOffsetBasis32 = 2166136261;
 
+std::shared_ptr<const CompiledMappingBundle>& ThreadLocalActiveBundleSnapshot() {
+  // Each caller thread retains its own immutable bundle snapshot so the raw
+  // pointer returned by GetActiveBundle() stays valid across concurrent loads.
+  thread_local std::shared_ptr<const CompiledMappingBundle> snapshot{};
+  return snapshot;
+}
+
 }  // namespace
 
 std::uint32_t ComputeMappingBundleHash(const CompiledMappingBundle& bundle) {
@@ -44,6 +51,24 @@ std::uint32_t ComputeMappingBundleHash(const CompiledMappingBundle& bundle) {
       hash ^= ((val >> (b * 8)) & 0xFF);
       hash *= kFnvPrime32;
     }
+
+    val = static_cast<std::uint32_t>(entry.deadzone);
+    for (int b = 0; b < 4; ++b) {
+      hash ^= ((val >> (b * 8)) & 0xFF);
+      hash *= kFnvPrime32;
+    }
+
+    val = static_cast<std::uint32_t>(entry.clamp_min);
+    for (int b = 0; b < 4; ++b) {
+      hash ^= ((val >> (b * 8)) & 0xFF);
+      hash *= kFnvPrime32;
+    }
+
+    val = static_cast<std::uint32_t>(entry.clamp_max);
+    for (int b = 0; b < 4; ++b) {
+      hash ^= ((val >> (b * 8)) & 0xFF);
+      hash *= kFnvPrime32;
+    }
   }
   return hash;
 }
@@ -70,6 +95,15 @@ ValidateMappingBundleResult DefaultMappingBundleValidator::Validate(
     result.status = charm::contracts::ContractStatus::kRejected;
     result.fault_code = {charm::contracts::ErrorCategory::kCapacityExceeded, 0};
     return result;
+  }
+
+  for (std::size_t i = 0; i < bundle.entry_count; ++i) {
+    const auto& entry = bundle.entries[i];
+    if (entry.clamp_min > entry.clamp_max) {
+      result.status = charm::contracts::ContractStatus::kRejected;
+      result.fault_code = {charm::contracts::ErrorCategory::kInvalidRequest, 1};
+      return result;
+    }
   }
 
   if (bundle.bundle_ref.integrity != ComputeMappingBundleHash(bundle)) {
@@ -103,8 +137,10 @@ LoadMappingBundleResult DefaultMappingBundleLoader::Load(const LoadMappingBundle
     return result;
   }
 
-  active_bundle_ = *request.bundle;
-  has_active_bundle_ = true;
+  const auto next_bundle =
+      std::make_shared<const CompiledMappingBundle>(*request.bundle);
+  const std::lock_guard<std::mutex> lock(mutex_);
+  active_bundle_ = next_bundle;
 
   result.status = charm::contracts::ContractStatus::kOk;
   return result;
@@ -113,16 +149,24 @@ LoadMappingBundleResult DefaultMappingBundleLoader::Load(const LoadMappingBundle
 GetActiveBundleResult DefaultMappingBundleLoader::GetActiveBundle(
     const GetActiveBundleRequest&) const {
   GetActiveBundleResult result{};
+  const std::lock_guard<std::mutex> lock(mutex_);
 
-  if (!has_active_bundle_) {
+  if (!active_bundle_) {
     result.status = charm::contracts::ContractStatus::kUnavailable;
     result.fault_code = {charm::contracts::ErrorCategory::kInvalidState, 0};
     return result;
   }
 
+  auto& snapshot = ThreadLocalActiveBundleSnapshot();
+  snapshot = active_bundle_;
   result.status = charm::contracts::ContractStatus::kOk;
-  result.bundle = &active_bundle_;
+  result.bundle = snapshot.get();
   return result;
+}
+
+void DefaultMappingBundleLoader::ClearActiveBundle() {
+  const std::lock_guard<std::mutex> lock(mutex_);
+  active_bundle_.reset();
 }
 
 }  // namespace charm::core

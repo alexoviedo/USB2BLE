@@ -22,6 +22,8 @@ struct ConfigTransportRequest {
   ConfigTransportCommand command{ConfigTransportCommand::kGetCapabilities};
   MappingBundleRef mapping_bundle{};
   ProfileId profile_id{};
+  const std::uint8_t* mapping_document{nullptr};
+  std::size_t mapping_document_size{0};
   const std::uint8_t* bonding_material{nullptr};
   std::size_t bonding_material_size{0};
   std::uint32_t integrity{0};

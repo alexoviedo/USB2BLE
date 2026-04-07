@@ -3,6 +3,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <mutex>
 
 #include "charm/contracts/error_types.hpp"
 #include "charm/contracts/events.hpp"
@@ -12,6 +14,7 @@
 namespace charm::core {
 
 inline constexpr std::size_t kMaxMappingEntries = 256;
+inline constexpr std::int32_t kMappingScaleOne = 1024;
 
 enum class LogicalElementType : std::uint8_t {
   kUnknown = 0,
@@ -30,8 +33,11 @@ struct MappingEntry {
   charm::contracts::ElementKeyHash source{};
   charm::contracts::InputElementType source_type{charm::contracts::InputElementType::kUnknown};
   LogicalElementRef target{};
-  std::int32_t scale{1};
+  std::int32_t scale{kMappingScaleOne};
   std::int32_t offset{0};
+  std::int32_t deadzone{0};
+  std::int32_t clamp_min{-127};
+  std::int32_t clamp_max{127};
 };
 
 struct CompiledMappingBundle {
@@ -93,6 +99,7 @@ class MappingBundleLoader {
 
   virtual LoadMappingBundleResult Load(const LoadMappingBundleRequest& request) = 0;
   virtual GetActiveBundleResult GetActiveBundle(const GetActiveBundleRequest& request) const = 0;
+  virtual void ClearActiveBundle() = 0;
 };
 
 class DefaultMappingBundleLoader : public MappingBundleLoader {
@@ -101,11 +108,12 @@ class DefaultMappingBundleLoader : public MappingBundleLoader {
 
   LoadMappingBundleResult Load(const LoadMappingBundleRequest& request) override;
   GetActiveBundleResult GetActiveBundle(const GetActiveBundleRequest& request) const override;
+  void ClearActiveBundle() override;
 
  private:
   const MappingBundleValidator* validator_;
-  CompiledMappingBundle active_bundle_{};
-  bool has_active_bundle_{false};
+  mutable std::mutex mutex_{};
+  std::shared_ptr<const CompiledMappingBundle> active_bundle_{};
 };
 
 }  // namespace charm::core

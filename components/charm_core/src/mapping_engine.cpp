@@ -1,8 +1,47 @@
 #include "charm/core/mapping_engine.hpp"
 
 #include <algorithm>
+#include <cstdint>
 
 namespace charm::core {
+
+namespace {
+
+std::int32_t ApplyAxisDeadzone(std::int32_t value, std::int32_t deadzone) {
+  if (deadzone <= 0) {
+    return value;
+  }
+
+  constexpr std::int32_t kAxisFullScale = 127;
+  const auto magnitude = std::abs(value);
+  if (magnitude <= deadzone) {
+    return 0;
+  }
+  if (deadzone >= kAxisFullScale) {
+    return 0;
+  }
+
+  const auto adjusted = magnitude - deadzone;
+  const auto scaled = (adjusted * kAxisFullScale) / (kAxisFullScale - deadzone);
+  return value < 0 ? -scaled : scaled;
+}
+
+std::int32_t ApplyTransform(const charm::contracts::InputElementEvent& event,
+                            const MappingEntry& entry) {
+  std::int32_t value = event.value;
+  if (entry.source_type == charm::contracts::InputElementType::kAxis) {
+    value = ApplyAxisDeadzone(value, entry.deadzone);
+  }
+
+  value = static_cast<std::int32_t>(
+      (static_cast<std::int64_t>(value) * static_cast<std::int64_t>(entry.scale)) /
+          kMappingScaleOne +
+      entry.offset);
+
+  return std::clamp(value, entry.clamp_min, entry.clamp_max);
+}
+
+}  // namespace
 
 DefaultMappingEngine::DefaultMappingEngine(CanonicalLogicalStateStore& state_store)
     : state_store_{state_store} {}
@@ -45,7 +84,7 @@ ApplyInputEventResult DefaultMappingEngine::ApplyInputEvent(
       }
 
       auto& mutable_state = state_store_.GetMutableState(event.timestamp);
-      std::int32_t mapped_value = (event.value * entry.scale) + entry.offset;
+      std::int32_t mapped_value = ApplyTransform(event, entry);
 
       switch (entry.target.type) {
         case LogicalElementType::kAxis:
@@ -85,6 +124,7 @@ ApplyInputEventResult DefaultMappingEngine::ApplyInputEvent(
     // Let's just return kOk.
     result.status = charm::contracts::ContractStatus::kOk;
   }
+  result.mapped = mapped;
 
   return result;
 }

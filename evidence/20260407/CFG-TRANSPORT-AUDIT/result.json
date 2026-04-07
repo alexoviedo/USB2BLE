@@ -1,0 +1,22 @@
+{
+  "scenario": "CFG-TRANSPORT-AUDIT",
+  "date_utc": "2026-04-07T08:30:10Z",
+  "result": "PASS",
+  "hardware": [
+    "/dev/cu.wchusbserial5B5E0200881",
+    "/dev/cu.usbmodem5B5E0200881"
+  ],
+  "firmware_commit": "ce0023b",
+  "notes": "Audit build flashed successfully. Config transport runtime started on UART0 and returned @CFG get_capabilities responses through both host-visible serial nodes, which resolve to the same USB Single Serial device (VID:PID 1A86:55D3, serial 5B5E020088).",
+  "evidence": [
+    "commands.txt",
+    "artifacts/20260407T083016Z-host-serial-ports.log",
+    "artifacts/20260407T083019Z-unit-build-runtime-adapter.log",
+    "artifacts/20260407T083028Z-unit-test-runtime-adapter.log",
+    "artifacts/20260407T083036Z-idf-build.log",
+    "artifacts/20260407T083141Z-idf-flash-wch.log",
+    "artifacts/20260407T083211Z-repro-wch-get-capabilities.log",
+    "artifacts/20260407T083220Z-repro-usbmodem-get-capabilities.log",
+    "artifacts/20260407T083247Z-host-port-metadata.log"
+  ]
+}

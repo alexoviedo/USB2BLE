@@ -8,6 +8,9 @@ class FakeBleTransportPort : public charm::ports::BleTransportPort {
  public:
   void SetStartResult(charm::contracts::StartResult result) { start_result_ = result; }
   void SetStopResult(charm::contracts::StopResult result) { stop_result_ = result; }
+  void SetSelectProfileResult(charm::contracts::SelectProfileResult result) {
+    select_profile_result_ = result;
+  }
   void SetNotifyResult(charm::ports::NotifyInputReportResult result) { notify_result_ = result; }
 
   void EmitPeerConnected(const charm::ports::BlePeerInfo& peer_info) const {
@@ -30,6 +33,10 @@ class FakeBleTransportPort : public charm::ports::BleTransportPort {
 
   charm::contracts::StartResult Start(const charm::contracts::StartRequest&) override { return start_result_; }
   charm::contracts::StopResult Stop(const charm::contracts::StopRequest&) override { return stop_result_; }
+  charm::contracts::SelectProfileResult SelectProfile(
+      const charm::contracts::SelectProfileRequest&) override {
+    return select_profile_result_;
+  }
 
   charm::ports::NotifyInputReportResult NotifyInputReport(const charm::ports::NotifyInputReportRequest&) override {
     return notify_result_;
@@ -40,6 +47,8 @@ class FakeBleTransportPort : public charm::ports::BleTransportPort {
  private:
   charm::contracts::StartResult start_result_{};
   charm::contracts::StopResult stop_result_{};
+  charm::contracts::SelectProfileResult select_profile_result_{
+      charm::contracts::ContractStatus::kOk, {}};
   charm::ports::NotifyInputReportResult notify_result_{};
   charm::ports::BleTransportPortListener* listener_{nullptr};
 };

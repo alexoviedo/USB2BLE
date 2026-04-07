@@ -1,6 +1,7 @@
 #include "charm/platform/ble_transport_adapter.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 
 #if __has_include("esp_bt.h") && __has_include("esp_bt_main.h") && \
@@ -22,6 +23,18 @@ namespace charm::platform {
 namespace {
 
 constexpr std::uint16_t kMinReportBytes = 1;
+constexpr charm::contracts::ProfileId kGenericBleProfileId{1};
+constexpr charm::contracts::ProfileId kWirelessXboxBleProfileId{2};
+constexpr std::uint32_t kReasonStartFailure = 1;
+constexpr std::uint32_t kReasonStopFailure = 2;
+constexpr std::uint32_t kReasonAdvertisingNotReady = 3;
+constexpr std::uint32_t kReasonPeerOrChannelNotReady = 4;
+constexpr std::uint32_t kReasonNotifyTransportFailure = 5;
+constexpr std::uint32_t kReasonReportChannelConfigFailure = 6;
+constexpr std::uint32_t kReasonUnsupportedProfile = 7;
+constexpr std::uint32_t kReasonProfileBackendFailure = 8;
+constexpr std::uint32_t kReasonProfileRestartFailure = 9;
+constexpr std::uint32_t kReasonReportContractMismatch = 10;
 
 #if CHARM_BLE_ESP_STACK_AVAILABLE
 constexpr const char* kTag = "charm_ble_hid";
@@ -34,9 +47,10 @@ constexpr std::uint16_t kProtocolModeUuid = 0x2A4E;
 constexpr std::uint16_t kControlPointUuid = 0x2A4C;
 constexpr std::uint16_t kReportMapUuid = 0x2A4B;
 constexpr std::uint8_t kBleAppId = 0x42;
-constexpr const char* kDeviceName = "Charm Gamepad";
+constexpr const char* kGenericDeviceName = "Charm Gamepad";
+constexpr const char* kXboxDeviceName = "Charm Xbox Controller";
 
-constexpr std::uint8_t kHidReportMap[] = {
+constexpr std::uint8_t kGenericHidReportMap[] = {
     0x05, 0x01,        // Usage Page (Generic Desktop)
     0x09, 0x05,        // Usage (Game Pad)
     0xA1, 0x01,        // Collection (Application)
@@ -79,16 +93,124 @@ constexpr std::uint8_t kHidReportMap[] = {
     0xC0,              // End Collection
 };
 
+constexpr std::uint8_t kXboxHidReportMap[] = {
+    0x05, 0x01,        // Usage Page (Generic Desktop)
+    0x09, 0x05,        // Usage (Game Pad)
+    0xA1, 0x01,        // Collection (Application)
+    0x85, 0x02,        //   Report ID (2)
+    0x05, 0x09,        //   Usage Page (Button)
+    0x19, 0x01,        //   Usage Minimum (1)
+    0x29, 0x10,        //   Usage Maximum (16)
+    0x15, 0x00,        //   Logical Min (0)
+    0x25, 0x01,        //   Logical Max (1)
+    0x75, 0x01,        //   Report Size (1)
+    0x95, 0x10,        //   Report Count (16)
+    0x81, 0x02,        //   Input (Data,Var,Abs)
+    0x19, 0x11,        //   Usage Minimum (17)
+    0x29, 0x14,        //   Usage Maximum (20)
+    0x95, 0x04,        //   Report Count (4)
+    0x81, 0x02,        //   Input (Data,Var,Abs)
+    0x75, 0x04,        //   Report Size (4) padding
+    0x95, 0x01,        //   Report Count (1)
+    0x81, 0x03,        //   Input (Const,Var,Abs)
+    0x05, 0x02,        //   Usage Page (Simulation Controls)
+    0x09, 0xC5,        //   Usage (Brake)
+    0x09, 0xC4,        //   Usage (Accelerator)
+    0x15, 0x00,        //   Logical Min (0)
+    0x26, 0xFF, 0x00,  //   Logical Max (255)
+    0x75, 0x08,        //   Report Size (8)
+    0x95, 0x02,        //   Report Count (2)
+    0x81, 0x02,        //   Input (Data,Var,Abs)
+    0x05, 0x01,        //   Usage Page (Generic Desktop)
+    0x09, 0x30,        //   Usage X
+    0x09, 0x31,        //   Usage Y
+    0x09, 0x33,        //   Usage Rx
+    0x09, 0x34,        //   Usage Ry
+    0x16, 0x00, 0x80,  //   Logical Min (-32768)
+    0x26, 0xFF, 0x7F,  //   Logical Max (32767)
+    0x75, 0x10,        //   Report Size (16)
+    0x95, 0x04,        //   Report Count (4)
+    0x81, 0x02,        //   Input (Data,Var,Abs)
+    0xC0,              // End Collection
+};
+
 constexpr std::uint8_t kHidInfo[] = {0x11, 0x01, 0x00, 0x02};  // bcdHID, country, flags
 constexpr std::uint8_t kProtocolModeReport = 0x01;
 constexpr std::uint8_t kControlPointSuspend = 0x00;
 
 #endif
 
+constexpr charm::platform::BleProfileContract kGenericBleProfileContract{
+    .profile_id = kGenericBleProfileId,
+    .profile_name = "Generic BLE Gamepad",
+    .device_name = "Charm Gamepad",
+    .report_id = 1,
+    .report_size = 9,
+    .appearance = 0x03C0,
+    .report_map =
+#if CHARM_BLE_ESP_STACK_AVAILABLE
+        kGenericHidReportMap,
+#else
+        nullptr,
+#endif
+    .report_map_size =
+#if CHARM_BLE_ESP_STACK_AVAILABLE
+        sizeof(kGenericHidReportMap),
+#else
+        0,
+#endif
+};
+
+constexpr charm::platform::BleProfileContract kXboxBleProfileContract{
+    .profile_id = kWirelessXboxBleProfileId,
+    .profile_name = "Wireless Xbox Controller",
+    .device_name = "Charm Xbox Controller",
+    .report_id = 2,
+    .report_size = 13,
+    .appearance = 0x03C0,
+    .report_map =
+#if CHARM_BLE_ESP_STACK_AVAILABLE
+        kXboxHidReportMap,
+#else
+        nullptr,
+#endif
+    .report_map_size =
+#if CHARM_BLE_ESP_STACK_AVAILABLE
+        sizeof(kXboxHidReportMap),
+#else
+        0,
+#endif
+};
+
+const charm::platform::BleProfileContract* ResolveBleProfileContract(
+    charm::contracts::ProfileId profile_id) {
+  if (profile_id.value == kGenericBleProfileId.value) {
+    return &kGenericBleProfileContract;
+  }
+  if (profile_id.value == kWirelessXboxBleProfileId.value) {
+    return &kXboxBleProfileContract;
+  }
+  return nullptr;
+}
+
 }  // namespace
 
 class EspBleLifecycleBackend final : public BleLifecycleBackend {
  public:
+  bool ConfigureProfile(const BleProfileContract& contract) override {
+    profile_contract_ = contract;
+#if CHARM_BLE_ESP_STACK_AVAILABLE
+    ESP_LOGI(kTag,
+             "ble profile configured profile=%u name=%s report_id=%u bytes=%u",
+             profile_contract_.profile_id.value, profile_contract_.profile_name,
+             profile_contract_.report_id,
+             static_cast<unsigned>(profile_contract_.report_size));
+#endif
+    return profile_contract_.profile_id.value != 0 &&
+           profile_contract_.report_id != 0 &&
+           profile_contract_.report_size >= kMinReportBytes;
+  }
+
   bool RegisterStackEventSink(StackEventSink* sink) override {
     sink_ = sink;
 #if CHARM_BLE_ESP_STACK_AVAILABLE
@@ -243,11 +365,11 @@ class EspBleLifecycleBackend final : public BleLifecycleBackend {
     adv_data.set_scan_rsp = false;
     adv_data.include_name = true;
     adv_data.include_txpower = true;
-    adv_data.appearance = kAppearanceGamepad;
+    adv_data.appearance = profile_contract_.appearance;
     adv_data.service_uuid_len = sizeof(hid_service_uuid);
     adv_data.p_service_uuid = reinterpret_cast<std::uint8_t*>(&hid_service_uuid);
     adv_data.flag = ESP_BLE_ADV_FLAG_GEN_DISC | ESP_BLE_ADV_FLAG_BREDR_NOT_SPT;
-    (void)esp_ble_gap_set_device_name(kDeviceName);
+    (void)esp_ble_gap_set_device_name(profile_contract_.device_name);
     (void)esp_ble_gap_config_adv_data(&adv_data);
   }
 
@@ -288,9 +410,10 @@ class EspBleLifecycleBackend final : public BleLifecycleBackend {
                                  ESP_GATT_CHAR_PROP_BIT_READ, &value, nullptr);
 
     uuid.uuid.uuid16 = kReportMapUuid;
-    value.attr_max_len = sizeof(kHidReportMap);
-    value.attr_len = sizeof(kHidReportMap);
-    value.attr_value = const_cast<std::uint8_t*>(kHidReportMap);
+    value.attr_max_len =
+        static_cast<std::uint16_t>(profile_contract_.report_map_size);
+    value.attr_len = static_cast<std::uint16_t>(profile_contract_.report_map_size);
+    value.attr_value = const_cast<std::uint8_t*>(profile_contract_.report_map);
     (void)esp_ble_gatts_add_char(service_handle_, &uuid, ESP_GATT_PERM_READ,
                                  ESP_GATT_CHAR_PROP_BIT_READ, &value, nullptr);
 
@@ -312,10 +435,11 @@ class EspBleLifecycleBackend final : public BleLifecycleBackend {
                                  ESP_GATT_CHAR_PROP_BIT_WRITE_NR, &value, nullptr);
 
     uuid.uuid.uuid16 = kHidReportCharUuid;
-    std::uint8_t empty_report[9] = {0};
-    value.attr_max_len = sizeof(empty_report);
-    value.attr_len = sizeof(empty_report);
-    value.attr_value = empty_report;
+    std::array<std::uint8_t, 32> empty_report{};
+    value.attr_max_len =
+        static_cast<std::uint16_t>(profile_contract_.report_size);
+    value.attr_len = static_cast<std::uint16_t>(profile_contract_.report_size);
+    value.attr_value = empty_report.data();
     (void)esp_ble_gatts_add_char(
         service_handle_, &uuid, ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE_ENCRYPTED,
         ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_NOTIFY, &value, nullptr);
@@ -479,6 +603,7 @@ class EspBleLifecycleBackend final : public BleLifecycleBackend {
   bool report_ready_{false};
   bool connected_{false};
   std::vector<std::uint8_t> bond_blob_{};
+  BleProfileContract profile_contract_{kGenericBleProfileContract};
 
 #if CHARM_BLE_ESP_STACK_AVAILABLE
   bool started_{false};
@@ -492,10 +617,12 @@ class EspBleLifecycleBackend final : public BleLifecycleBackend {
 };
 
 BleTransportAdapter::BleTransportAdapter()
-    : backend_(std::make_unique<EspBleLifecycleBackend>()) {}
+    : backend_(std::make_unique<EspBleLifecycleBackend>()),
+      active_profile_contract_(kGenericBleProfileContract) {}
 
 BleTransportAdapter::BleTransportAdapter(std::unique_ptr<BleLifecycleBackend> backend)
-    : backend_(backend ? std::move(backend) : std::make_unique<EspBleLifecycleBackend>()) {}
+    : backend_(backend ? std::move(backend) : std::make_unique<EspBleLifecycleBackend>()),
+      active_profile_contract_(kGenericBleProfileContract) {}
 
 charm::contracts::StartResult BleTransportAdapter::Start(
     const charm::contracts::StartRequest& /*request*/) {
@@ -505,14 +632,15 @@ charm::contracts::StartResult BleTransportAdapter::Start(
     return result;
   }
 
-  if (backend_ == nullptr || !backend_->RegisterStackEventSink(this) ||
+  if (backend_ == nullptr || !backend_->ConfigureProfile(active_profile_contract_) ||
+      !backend_->RegisterStackEventSink(this) ||
       !backend_->Start()) {
     result.status = charm::contracts::ContractStatus::kFailed;
     result.fault_code.category = charm::contracts::ErrorCategory::kAdapterFailure;
-    result.fault_code.reason = 1;
+    result.fault_code.reason = kReasonStartFailure;
     EmitStatus(charm::contracts::ContractStatus::kFailed,
                charm::contracts::AdapterState::kStopped,
-               charm::contracts::ErrorCategory::kAdapterFailure, 1);
+               charm::contracts::ErrorCategory::kAdapterFailure, kReasonStartFailure);
     return result;
   }
 
@@ -539,9 +667,9 @@ charm::contracts::StopResult BleTransportAdapter::Stop(
   if (backend_ == nullptr || !backend_->Stop()) {
     result.status = charm::contracts::ContractStatus::kFailed;
     result.fault_code.category = charm::contracts::ErrorCategory::kAdapterFailure;
-    result.fault_code.reason = 2;
+    result.fault_code.reason = kReasonStopFailure;
     EmitStatus(charm::contracts::ContractStatus::kFailed, state_,
-               charm::contracts::ErrorCategory::kAdapterFailure, 2);
+               charm::contracts::ErrorCategory::kAdapterFailure, kReasonStopFailure);
     return result;
   }
 
@@ -559,6 +687,59 @@ charm::contracts::StopResult BleTransportAdapter::Stop(
   return result;
 }
 
+charm::contracts::SelectProfileResult BleTransportAdapter::SelectProfile(
+    const charm::contracts::SelectProfileRequest& request) {
+  charm::contracts::SelectProfileResult result{};
+  const auto* contract = ResolveBleProfileContract(request.profile_id);
+  if (contract == nullptr) {
+    result.status = charm::contracts::ContractStatus::kRejected;
+    result.fault_code.category =
+        charm::contracts::ErrorCategory::kUnsupportedCapability;
+    result.fault_code.reason = kReasonUnsupportedProfile;
+    return result;
+  }
+
+  const bool profile_changed =
+      contract->profile_id.value != active_profile_contract_.profile_id.value;
+  active_profile_contract_ = *contract;
+
+  if (backend_ != nullptr && !backend_->ConfigureProfile(active_profile_contract_)) {
+    result.status = charm::contracts::ContractStatus::kFailed;
+    result.fault_code.category = charm::contracts::ErrorCategory::kAdapterFailure;
+    result.fault_code.reason = kReasonProfileBackendFailure;
+    EmitStatus(charm::contracts::ContractStatus::kFailed, state_,
+               charm::contracts::ErrorCategory::kAdapterFailure,
+               kReasonProfileBackendFailure);
+    return result;
+  }
+
+  if (profile_changed &&
+      state_ == charm::contracts::AdapterState::kRunning && backend_ != nullptr) {
+    advertising_ready_ = false;
+    peer_connected_ = false;
+    report_channel_ready_ = false;
+    backend_->ClearReportChannel();
+    const bool restarted = backend_->Stop() && backend_->Start();
+    if (!restarted) {
+      state_ = charm::contracts::AdapterState::kStopped;
+      result.status = charm::contracts::ContractStatus::kFailed;
+      result.fault_code.category = charm::contracts::ErrorCategory::kAdapterFailure;
+      result.fault_code.reason = kReasonProfileRestartFailure;
+      EmitStatus(charm::contracts::ContractStatus::kFailed, state_,
+                 charm::contracts::ErrorCategory::kAdapterFailure,
+                 kReasonProfileRestartFailure);
+      return result;
+    }
+    recovery_attempts_ = 0;
+    if (!backend_->UsesStackEventCallbacks()) {
+      OnAdvertisingReady();
+    }
+  }
+
+  result.status = charm::contracts::ContractStatus::kOk;
+  return result;
+}
+
 charm::ports::NotifyInputReportResult BleTransportAdapter::NotifyInputReport(
     const charm::ports::NotifyInputReportRequest& request) {
   charm::ports::NotifyInputReportResult result;
@@ -571,25 +752,33 @@ charm::ports::NotifyInputReportResult BleTransportAdapter::NotifyInputReport(
   if (!advertising_ready_) {
     result.status = charm::contracts::ContractStatus::kUnavailable;
     result.fault_code.category = charm::contracts::ErrorCategory::kInvalidState;
-    result.fault_code.reason = 3;
+    result.fault_code.reason = kReasonAdvertisingNotReady;
     return result;
   }
 
   if (!peer_connected_ || !report_channel_ready_) {
     result.status = charm::contracts::ContractStatus::kUnavailable;
     result.fault_code.category = charm::contracts::ErrorCategory::kInvalidState;
-    result.fault_code.reason = 4;
+    result.fault_code.reason = kReasonPeerOrChannelNotReady;
+    return result;
+  }
+
+  if (request.report.report_id != active_profile_contract_.report_id ||
+      request.report.size != active_profile_contract_.report_size) {
+    result.status = charm::contracts::ContractStatus::kRejected;
+    result.fault_code.category = charm::contracts::ErrorCategory::kInvalidRequest;
+    result.fault_code.reason = kReasonReportContractMismatch;
     return result;
   }
 
   if (backend_ == nullptr || !backend_->SendReport(request.report)) {
     result.status = charm::contracts::ContractStatus::kFailed;
     result.fault_code.category = charm::contracts::ErrorCategory::kTransportFailure;
-    result.fault_code.reason = 5;
-    const bool recovered = TryRecover(5);
+    result.fault_code.reason = kReasonNotifyTransportFailure;
+    const bool recovered = TryRecover(kReasonNotifyTransportFailure);
     EmitStatus(charm::contracts::ContractStatus::kFailed, state_,
                charm::contracts::ErrorCategory::kTransportFailure,
-               recovered ? 0u : 5u);
+               recovered ? 0u : kReasonNotifyTransportFailure);
     return result;
   }
 
@@ -642,7 +831,7 @@ void BleTransportAdapter::OnReportChannelReady(std::uint32_t transport_if,
   report_channel_ready_ = backend_->ConfigureReportChannel(
       transport_if, connection_id, value_handle, require_confirmation);
   if (!report_channel_ready_) {
-    (void)TryRecover(6);
+    (void)TryRecover(kReasonReportChannelConfigFailure);
   }
 }
 
@@ -747,6 +936,9 @@ void BleTransportAdapter::EmitStatus(charm::contracts::ContractStatus status,
   status_event.state = state;
   status_event.fault_code.category = category;
   status_event.fault_code.reason = reason;
+  status_event.active_profile = active_profile_contract_.profile_id;
+  status_event.active_report_id = active_profile_contract_.report_id;
+  status_event.active_report_size = active_profile_contract_.report_size;
   listener_->OnStatusChanged(status_event);
 }
 

@@ -25,6 +25,8 @@ class FakeConfigStorePort : public charm::ports::ConfigStorePort {
     last_persist_request_ = req;
     if (persist_result_.status == charm::contracts::ContractStatus::kOk) {
       persisted_config_.mapping_bundle = req.mapping_bundle;
+      persisted_config_.compiled_mapping_bundle = req.compiled_mapping_bundle;
+      persisted_config_.compiled_mapping_bundle_size = req.compiled_mapping_bundle_size;
       persisted_config_.profile_id = req.profile_id;
       // We don't allocate or free in fake store for bonding material to keep it simple,
       // but we update the pointer/size if provided.

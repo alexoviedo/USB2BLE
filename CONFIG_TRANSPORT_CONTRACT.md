@@ -1,71 +1,119 @@
 # CONFIG_TRANSPORT_CONTRACT.md
 
 ## Purpose
-Define the production serial-first host/device configuration transport contract and framing used by the firmware runtime.
+Define the production serial-first host/device configuration transport contract and the runtime semantics behind it.
 
 ## Status
-- Contract version: `v1`
-- Runtime status: implemented in the firmware parser/runtime adapter
+- Current implemented contract version: `v2`
+- Current implemented framing: serial-first `@CFG:{json}\n`
+- Current implemented compiler path: browser draft -> `mapping_document` -> firmware compile -> persisted compiled bundle -> runtime activation
 
-## Chosen First Transport Path
-1. **First transport path:** line-framed request/response messages over the existing device serial channel.
-2. **Serial primary?:** Yes. Serial is the only primary transport for first-production config write/persist.
-3. **BLE config transport:** Deferred (future path only after separate proof/contract work).
+## Chosen Transport Path
+1. First transport path is the existing device serial channel.
+2. Serial remains the only production config transport.
+3. BLE config transport remains out of scope.
 
-## Command Set (v1)
+## Implemented Command Set
 - `config.persist`
 - `config.load`
 - `config.clear`
 - `config.get_capabilities`
 
-## Request Shape
+## Request Envelope
 - `protocol_version` (required)
-- `request_id` (required, unique per in-flight request)
+- `request_id` (required)
 - `command` (required)
 - `payload` (command-specific)
-- `integrity` (required metadata for validation)
+- `integrity` (required)
+
+## Response Envelope
+- `protocol_version` (required)
+- `request_id` (required; matches request)
+- `command` (required)
+- `status` (required)
+- `fault` (always serialized by the runtime adapter; zeroed for success)
+- `payload` (command-specific when present)
+- `capabilities` (`config.get_capabilities` only)
 
 ## Wire Framing
-- **Frame prefix:** `@CFG:`
-- **Wire request format:** `@CFG:{json}\n`
-- **Wire response format:** `@CFG:{json}\n`
-- Frames without the `@CFG:` prefix are ignored by the firmware config runtime transport so human-readable logs can coexist on the same serial stream without contaminating config parsing.
+- Frame prefix: `@CFG:`
+- Request format: `@CFG:{json}\n`
+- Response format: `@CFG:{json}\n`
+- Non-`@CFG:` lines are ignored by the firmware runtime adapter so ordinary console logs can share the same serial stream.
 
-## Response Shape
-- `protocol_version` (required)
-- `request_id` (required; must match request)
-- `status` (required; maps to firmware `ContractStatus`)
-- `fault` (optional; required when status is non-ok; maps to firmware `FaultCode`)
-- `payload` (command-specific output)
+## `config.persist` Request Payload
+- `mapping_document` (required object)
+- `profile_id` (required; firmware/runtime activation in this branch is validated for `1 = Generic BLE Gamepad` and `2 = Wireless Xbox Controller`)
+- `bonding_material` (optional byte array)
 
-## Error Mapping
-- Transport framing and I/O faults remain transport-level errors and must not be rewritten as firmware-domain success.
-- Firmware returns preserve existing contract semantics:
-  - `kOk`
-  - `kRejected`
-  - `kUnavailable`
-  - `kFailed`
+### `mapping_document` Shape
+```json
+{
+  "version": 1,
+  "global": {
+    "scale": 1.0,
+    "deadzone": 0.08,
+    "clamp_min": -1.0,
+    "clamp_max": 1.0
+  },
+  "axes": [
+    {
+      "target": "move_x",
+      "source_index": 0,
+      "scale": 1.0,
+      "deadzone": 0.08,
+      "invert": false
+    }
+  ],
+  "buttons": [
+    {
+      "target": "action_a",
+      "source_index": 0
+    }
+  ]
+}
+```
 
-## Persistence Expectations
-- `config.persist` writes mapping bundle/profile payload to the firmware config-store boundary only.
-- Persisted write is explicit.
-- `config.load` is read-only and returns the current persisted view.
-- `config.clear` removes persisted config and returns explicit status/fault.
-- Bonding material in the first path is an optional payload field and may be absent.
+## `config.persist` Semantics
+- Firmware validates `protocol_version`, `request_id`, and `integrity` before mutation.
+- Firmware compiles `mapping_document` into a `CompiledMappingBundle`.
+- `mapping_bundle.integrity` is derived from `ComputeMappingBundleHash(compiled_bundle)`.
+- `mapping_bundle.bundle_id` is set from the compiled bundle integrity value (falling back to `1` only if the hash is zero).
+- Firmware persists:
+  - `mapping_bundle` ref
+  - compiled bundle bytes
+  - `profile_id`
+  - optional `bonding_material`
+- Firmware activates the compiled bundle in the runtime loader immediately on successful persist.
+- Firmware does not persist the raw browser draft or the raw `mapping_document`.
 
-## Versioning + Integrity Expectations
-- Contract versioning is explicit via `protocol_version` and must be validated before command execution.
-- Message integrity metadata is required in request/response envelopes for verification.
-- Unsupported versions must fail closed with explicit non-ok status/fault and no state mutation.
+## `config.load` Response Payload
+- `mapping_bundle`
+- `profile_id`
 
-## Failure + Rollback Behavior
-- Fail closed on malformed envelope, unsupported version, or integrity mismatch.
-- If persist fails, the previous persisted configuration remains authoritative.
-- No speculative success path should be assumed by tooling until explicit firmware response status is received.
+Current wire behavior does not return the persisted compiled bundle bytes or raw draft content to the browser.
 
-## Explicit Non-Support in First Slice
-- No BLE config transport in the first production path.
-- No multi-transport negotiation or racing.
-- No streaming or partial config-upload semantics.
-- No background auto-retry persist loops.
-- No schema migration/version-upgrade logic beyond strict version acceptance/rejection.
+## `config.clear` Semantics
+- Clears persisted config-store state.
+- Clears the active compiled bundle loader state.
+- Clears supervisor-visible stored mapping/profile refs.
+
+## `config.get_capabilities` Semantics
+- Reports protocol version `2`
+- Reports support for `persist`, `load`, `clear`, and `get_capabilities`
+- Reports `supports_ble_transport = false`
+
+## Integrity + Failure Behavior
+- Unsupported versions fail closed.
+- Malformed envelopes fail closed.
+- Persist compilation failure or store failure leaves the previous persisted compiled bundle authoritative.
+- The `integrity` field is required metadata for contract verification. The current request sentinel remains `CFG1`; compiled bundle integrity is tracked separately inside the persisted bundle metadata.
+
+## Explicit Non-Support
+- No BLE config transport.
+- No background config sync loops.
+- No raw draft persistence on-device.
+- No fake profile selection beyond what firmware can actually encode.
+- No partial or streaming config upload protocol.
+- The current web companion Config UI exposes exactly two constrained profile choices: `1 = Generic BLE Gamepad` and `2 = Wireless Xbox Controller`.
+- `config.get_capabilities` still does not dynamically enumerate profiles; the web UI must treat the supported profile set as the shipped branch contract, not a runtime-discovered capability list.

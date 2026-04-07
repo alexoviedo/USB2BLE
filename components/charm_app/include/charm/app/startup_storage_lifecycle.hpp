@@ -2,6 +2,7 @@
 
 #include <cstdint>
 
+#include "charm/core/mapping_bundle.hpp"
 #include "charm/core/supervisor.hpp"
 #include "charm/ports/config_store_port.hpp"
 
@@ -21,8 +22,12 @@ struct StorageInitOutcome {
 StorageInitFns DefaultStorageInitFns();
 StorageInitOutcome InitializeStorage(const StorageInitFns& fns);
 bool InitializeStorageAndActivate(
-    charm::ports::ConfigStorePort& store, charm::core::Supervisor& supervisor,
-    void (*activate_fn)(charm::ports::ConfigStorePort&, charm::core::Supervisor&),
+    charm::ports::ConfigStorePort& store,
+    charm::core::MappingBundleLoader& mapping_bundle_loader,
+    charm::core::Supervisor& supervisor,
+    void (*activate_fn)(charm::ports::ConfigStorePort&,
+                        charm::core::MappingBundleLoader&,
+                        charm::core::Supervisor&),
     const StorageInitFns& fns);
 
 }  // namespace charm::app

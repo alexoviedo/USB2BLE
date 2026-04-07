@@ -7,13 +7,21 @@ constexpr std::uint32_t kReasonUnsupportedProtocol = 1;
 constexpr std::uint32_t kReasonMissingRequestId = 2;
 constexpr std::uint32_t kReasonIntegrityMismatch = 3;
 constexpr std::uint32_t kReasonPersistPayloadInvalid = 4;
+constexpr std::uint32_t kReasonCompiledBundleActivationFailed = 5;
 }  // namespace
 
-ConfigTransportService::ConfigTransportService(charm::ports::ConfigStorePort& config_store)
-    : config_store_(config_store) {}
+ConfigTransportService::ConfigTransportService(
+    charm::ports::ConfigStorePort& config_store,
+    charm::core::ConfigCompiler& config_compiler,
+    charm::core::MappingBundleLoader& mapping_bundle_loader,
+    charm::core::Supervisor& supervisor)
+    : config_store_(config_store),
+      config_compiler_(config_compiler),
+      mapping_bundle_loader_(mapping_bundle_loader),
+      supervisor_(supervisor) {}
 
 charm::contracts::ConfigTransportResponse ConfigTransportService::HandleRequest(
-    const charm::contracts::ConfigTransportRequest& request) const {
+    const charm::contracts::ConfigTransportRequest& request) {
   charm::contracts::ConfigTransportResponse rejection{};
   if (!IsEnvelopeValid(request, &rejection)) {
     return rejection;
@@ -26,18 +34,57 @@ charm::contracts::ConfigTransportResponse ConfigTransportService::HandleRequest(
 
   switch (request.command) {
     case charm::contracts::ConfigTransportCommand::kPersist: {
-      if (request.mapping_bundle.bundle_id == 0 || request.profile_id.value == 0) {
+      if (request.mapping_document == nullptr || request.mapping_document_size == 0 ||
+          request.profile_id.value == 0) {
         return Reject(request, charm::contracts::ErrorCategory::kInvalidRequest,
                       kReasonPersistPayloadInvalid);
       }
+
+      const auto compile_result = config_compiler_.CompileConfig(
+          charm::core::CompileConfigRequest{
+              .document =
+                  charm::core::MappingConfigDocument{
+                      .bytes = request.mapping_document,
+                      .size = request.mapping_document_size,
+                  },
+          });
+      if (compile_result.status != charm::contracts::ContractStatus::kOk) {
+        response.status = compile_result.status;
+        response.fault_code = compile_result.fault_code;
+        return response;
+      }
+
       charm::contracts::PersistConfigRequest persist_request{};
-      persist_request.mapping_bundle = request.mapping_bundle;
+      persist_request.mapping_bundle = compile_result.bundle.bundle_ref;
+      persist_request.compiled_mapping_bundle =
+          reinterpret_cast<const std::uint8_t*>(&compile_result.bundle);
+      persist_request.compiled_mapping_bundle_size =
+          sizeof(compile_result.bundle);
       persist_request.profile_id = request.profile_id;
       persist_request.bonding_material = request.bonding_material;
       persist_request.bonding_material_size = request.bonding_material_size;
       const auto persist_result = config_store_.PersistConfig(persist_request);
       response.status = persist_result.status;
       response.fault_code = persist_result.fault_code;
+      if (persist_result.status != charm::contracts::ContractStatus::kOk) {
+        return response;
+      }
+
+      const auto load_bundle_result =
+          mapping_bundle_loader_.Load({.bundle = &compile_result.bundle});
+      if (load_bundle_result.status != charm::contracts::ContractStatus::kOk) {
+        response.status = charm::contracts::ContractStatus::kFailed;
+        response.fault_code.category =
+            charm::contracts::ErrorCategory::kInvalidState;
+        response.fault_code.reason = kReasonCompiledBundleActivationFailed;
+        return response;
+      }
+
+      (void)supervisor_.ActivateMappingBundle(
+          {.mapping_bundle = compile_result.bundle.bundle_ref});
+      (void)supervisor_.SelectProfile({.profile_id = request.profile_id});
+      response.mapping_bundle = compile_result.bundle.bundle_ref;
+      response.profile_id = request.profile_id;
       return response;
     }
     case charm::contracts::ConfigTransportCommand::kLoad: {
@@ -54,6 +101,11 @@ charm::contracts::ConfigTransportResponse ConfigTransportService::HandleRequest(
       const auto clear_result = config_store_.ClearConfig({});
       response.status = clear_result.status;
       response.fault_code = clear_result.fault_code;
+      if (clear_result.status == charm::contracts::ContractStatus::kOk) {
+        mapping_bundle_loader_.ClearActiveBundle();
+        (void)supervisor_.ActivateMappingBundle({});
+        (void)supervisor_.SelectProfile({});
+      }
       return response;
     }
     case charm::contracts::ConfigTransportCommand::kGetCapabilities: {

@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <mutex>
 #include "charm/contracts/registry_types.hpp"
 #include "charm/contracts/requests.hpp"
 namespace charm::contracts {
@@ -42,6 +43,7 @@ class DefaultSupervisor : public Supervisor {
   SupervisorState GetState() const override;
 
  private:
+  mutable std::mutex mutex_{};
   SupervisorState state_{};
 };
 }  // namespace charm::core

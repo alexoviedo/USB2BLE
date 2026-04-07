@@ -16,6 +16,7 @@ struct ApplyInputEventRequest {
 struct ApplyInputEventResult {
   charm::contracts::ContractStatus status{charm::contracts::ContractStatus::kUnspecified};
   charm::contracts::FaultCode fault_code{};
+  bool mapped{false};
 };
 
 class MappingEngine {

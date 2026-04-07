@@ -32,11 +32,19 @@ struct FieldDescriptor {
   charm::contracts::ReportId report_id{0};
   charm::contracts::UsagePage usage_page{0};
   charm::contracts::Usage usage{0};
+  charm::contracts::Usage usage_min{0};
+  charm::contracts::Usage usage_max{0};
   charm::contracts::CollectionIndex collection_index{0};
   charm::contracts::LogicalIndex logical_index{0};
   std::uint16_t bit_offset{0};
   std::uint16_t bit_size{0};
   bool is_signed{false};
+  bool is_relative{false};
+  bool is_array{false};
+  bool has_null_state{false};
+  bool has_usage_range{false};
+  std::int32_t logical_min{0};
+  std::int32_t logical_max{0};
 };
 
 struct SemanticDescriptorModel {

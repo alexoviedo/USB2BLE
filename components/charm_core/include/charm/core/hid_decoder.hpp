@@ -2,6 +2,9 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "charm/contracts/events.hpp"
 #include "charm/contracts/requests.hpp"
@@ -29,11 +32,18 @@ class HidDecoder {
   virtual ~HidDecoder() = default;
 
   virtual DecodeReportResult DecodeReport(const DecodeReportRequest& request) = 0;
+  virtual void ResetInterfaceState(charm::contracts::InterfaceHandle interface_handle) = 0;
 };
 
 class DefaultHidDecoder final : public HidDecoder {
  public:
   DecodeReportResult DecodeReport(const DecodeReportRequest& request) override;
+  void ResetInterfaceState(charm::contracts::InterfaceHandle interface_handle) override;
+
+ private:
+  std::unordered_map<std::uint64_t,
+                     std::unordered_set<charm::contracts::Usage>>
+      array_active_usages_{};
 };
 
 }  // namespace charm::core

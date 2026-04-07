@@ -14,6 +14,9 @@ struct BleTransportStatus {
   charm::contracts::ContractStatus status{charm::contracts::ContractStatus::kUnspecified};
   charm::contracts::FaultCode fault_code{};
   charm::contracts::AdapterState state{charm::contracts::AdapterState::kUnknown};
+  charm::contracts::ProfileId active_profile{};
+  charm::contracts::ReportId active_report_id{0};
+  std::size_t active_report_size{0};
 };
 
 struct BlePeerInfo {
@@ -50,6 +53,8 @@ class BleTransportPort {
 
   virtual charm::contracts::StartResult Start(const charm::contracts::StartRequest& request) = 0;
   virtual charm::contracts::StopResult Stop(const charm::contracts::StopRequest& request) = 0;
+  virtual charm::contracts::SelectProfileResult SelectProfile(
+      const charm::contracts::SelectProfileRequest& request) = 0;
   virtual NotifyInputReportResult NotifyInputReport(const NotifyInputReportRequest& request) = 0;
   virtual void SetListener(BleTransportPortListener* listener) = 0;
 };

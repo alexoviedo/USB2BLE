@@ -1,0 +1,63 @@
+scenario=CFG-TRANSPORT-AUDIT
+date=20260407
+repo_root=/Users/alex/Developer/CodexUSB/USB2BLE
+git_branch=codex/freeze-contract-plan
+git_commit=ce0023b
+initialized_at_utc=2026-04-07T08:30:10Z
+
+[2026-04-07T08:30:16Z]
+label=host-serial-ports
+cwd=/Users/alex/Developer/CodexUSB/USB2BLE
+output_log=artifacts/20260407T083016Z-host-serial-ports.log
+$ bash -lc ls\ /dev/cu.\*\ 2\>/dev/null\ \|\ rg\ \'usb\|wch\|modem\|serial\|SLAB\|UART\'\ \|\|\ true
+[exit 0]
+
+[2026-04-07T08:30:19Z]
+label=unit-build-runtime-adapter
+cwd=/Users/alex/Developer/CodexUSB/USB2BLE
+output_log=artifacts/20260407T083019Z-unit-build-runtime-adapter.log
+$ cmake --build build/unit --target test_config_transport_runtime_adapter --parallel
+[exit 0]
+
+[2026-04-07T08:30:28Z]
+label=unit-test-runtime-adapter
+cwd=/Users/alex/Developer/CodexUSB/USB2BLE
+output_log=artifacts/20260407T083028Z-unit-test-runtime-adapter.log
+$ ctest --test-dir build/unit --output-on-failure -R ConfigTransportRuntimeAdapterTest
+[exit 0]
+
+[2026-04-07T08:30:36Z]
+label=idf-build
+cwd=/Users/alex/Developer/CodexUSB/USB2BLE
+output_log=artifacts/20260407T083036Z-idf-build.log
+$ bash -lc source\ /Users/alex/esp/esp-idf/export.sh\ \&\&\ idf.py\ build
+[exit 0]
+
+[2026-04-07T08:31:41Z]
+label=idf-flash-wch
+cwd=/Users/alex/Developer/CodexUSB/USB2BLE
+output_log=artifacts/20260407T083141Z-idf-flash-wch.log
+$ bash -lc source\ /Users/alex/esp/esp-idf/export.sh\ \&\&\ idf.py\ -p\ /dev/cu.wchusbserial5B5E0200881\ flash
+[exit 0]
+
+[2026-04-07T08:32:11Z]
+label=repro-wch-get-capabilities
+cwd=/Users/alex/Developer/CodexUSB/USB2BLE
+output_log=artifacts/20260407T083211Z-repro-wch-get-capabilities.log
+$ python scripts/repro_cfg_timeout.py --port /dev/cu.wchusbserial5B5E0200881 --command get_capabilities --wait-for-boot
+[exit 0]
+
+[2026-04-07T08:32:20Z]
+label=repro-usbmodem-get-capabilities
+cwd=/Users/alex/Developer/CodexUSB/USB2BLE
+output_log=artifacts/20260407T083220Z-repro-usbmodem-get-capabilities.log
+$ python scripts/repro_cfg_timeout.py --port /dev/cu.usbmodem5B5E0200881 --command get_capabilities --wait-for-boot
+[exit 0]
+
+[2026-04-07T08:32:47Z]
+label=host-port-metadata
+cwd=/Users/alex/Developer/CodexUSB/USB2BLE
+output_log=artifacts/20260407T083247Z-host-port-metadata.log
+$ python -
+[exit 0]
+

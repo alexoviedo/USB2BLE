@@ -1,0 +1,71 @@
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x1 (POWERON),boot:0x8 (SPI_FAST_FLASH_BOOT)
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce2820,len:0x14f0
+load:0x403c8700,len:0xd24
+load:0x403cb700,len:0x2ef0
+entry 0x403c8924
+I (21) boot: ESP-IDF v5.5.3 2nd stage bootloader
+I (21) boot: compile time Apr  6 2026 19:50:55
+I (22) boot: Multicore bootloader
+I (22) boot: chip revision: v0.2
+I (25) boot: efuse block revision: v1.3
+I (28) boot.esp32s3: Boot SPI Speed : 80MHz
+I (32) boot.esp32s3: SPI Mode       : DIO
+I (36) boot.esp32s3: SPI Flash Size : 2MB
+I (40) boot: Enabling RNG early entropy source...
+I (44) boot: Partition Table:
+I (47) boot: ## Label            Usage          Type ST Offset   Length
+I (53) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (59) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (66) boot:  2 factory          factory app      00 00 00010000 00100000
+I (73) boot: End of partition table
+I (76) esp_image: segment 0: paddr=00010020 vaddr=3c070020 size=15dach ( 89516) map
+I (99) esp_image: segment 1: paddr=00025dd4 vaddr=3fc94300 size=031b8h ( 12728) load
+I (102) esp_image: segment 2: paddr=00028f94 vaddr=40374000 size=07084h ( 28804) load
+I (109) esp_image: segment 3: paddr=00030020 vaddr=42000020 size=657ech (415724) map
+I (184) esp_image: segment 4: paddr=00095814 vaddr=4037b084 size=09264h ( 37476) load
+OPEN /dev/cu.usbmodem5B5E0200881
+I (192) esp_image: segment 5: paddr=0009ea80 vaddr=50000000 size=00020h (    32) load
+I (199) boot: Loaded app from partition at offset 0x10000
+I (199) boot: Disabling RNG early entropy source...
+I (210) cpu_start: Multicore app
+I (218) cpu_start: GPIO 44 and 43 are used as console UART I/O pins
+I (219) cpu_start: Pro cpu start user code
+I (219) cpu_start: cpu freq: 160000000 Hz
+I (221) app_init: Application information:
+I (224) app_init: Project name:     charm
+I (228) app_init: App version:      ce0023b-dirty
+I (233) app_init: Compile time:     Apr  6 2026 19:46:19
+I (238) app_init: ELF file SHA256:  464c5bc56...
+I (242) app_init: ESP-IDF:          v5.5.3
+I (246) efuse_init: Min chip rev:     v0.0
+I (250) efuse_init: Max chip rev:     v0.99 
+I (254) efuse_init: Chip rev:         v0.2
+I (257) heap_init: Initializing. RAM available for dynamic allocation:
+I (264) heap_init: At 3FC9BB58 len 0004DBB8 (310 KiB): RAM
+I (269) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM
+I (274) heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM
+I (279) heap_init: At 600FE000 len 00001FE8 (7 KiB): RTCRAM
+I (286) spi_flash: detected chip: boya
+I (288) spi_flash: flash io: dio
+W (291) spi_flash: Detected size(16384k) larger than the size in the binary image header(2048k). Using the size in the binary image header.
+I (304) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+I (310) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+I (317) main_task: Started on CPU0
+I (327) main_task: Calling app_main()
+I (337) charm_usb_host: Installing USB host stack
+I (367) ³ûI (367) cfg_transport_audit: runtime started port=0 baud=115200
+I (367) cfg_transport_audit: bootstrap port=0 baud=115200 install_rc=0 param_rc=0 task_rc=1
+I (367) main_task: Returned from app_main()
+I (927) cfg_transport_audit: rx port=0 bytes_read=114 bytes_total=114 parsed_frames=1 emitted_frames=0
+I (927) cfg_transport_audit: tx port=0 parsed_frames=1 emitted_frames=1
+@CFG:{"protocol_version":2,"request_id":9401,"command":"config.get_capabilities","status":"kOk","fault":{"category":"kContractViolation","reason":0},"capabilities":{"protocol_version":2,"supports_persist":true,"supports_load":true,"supports_clear":true,"supports_get_capabilities":true,"supports_ble_transport":false}}
+
+BOOT_PHASE_DONE True
+REQUEST_SENT
+
+RESPONSE_PHASE_DONE
+SUMMARY {"boot_bytes": 3244, "boot_complete": true, "command": "config.get_capabilities", "frame_len": 114, "has_cfg_frame": true, "port": "/dev/cu.usbmodem5B5E0200881", "request_id": 9401, "response_bytes": 496, "signals_deasserted": true, "wait_for_boot": true}

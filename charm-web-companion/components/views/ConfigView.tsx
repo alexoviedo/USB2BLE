@@ -5,12 +5,23 @@ import { useAppStore } from '@/lib/store';
 import {
   AlertCircle, Save, Upload, Download, RefreshCw,
   Trash2, Database, Laptop, Info, CheckCircle2, Loader2,
-  Plus, X, ChevronDown, ChevronUp
+  Plus, X
 } from 'lucide-react';
-import { LocalDraft, LocalDraftSchema, MappingBundleRefSchema } from '@/lib/schema';
+import { LocalDraft, LocalDraftSchema } from '@/lib/schema';
 import { SerialConfigTransport } from '@/lib/adapters/SerialConfigTransport';
 import { ConfigRequestEnvelope, ConfigResponseEnvelope } from '@/lib/schema';
 import { logSerialLifecycleEvent } from '@/lib/serialLifecycle';
+import {
+  compileLocalDraftToMappingDocument,
+  SUPPORTED_CONFIG_PROTOCOL_VERSION,
+} from '@/lib/configCompiler';
+import {
+  DEFAULT_CONFIG_PROFILE_ID,
+  getSupportedConfigProfile,
+  isSupportedConfigProfileId,
+  SUPPORTED_CONFIG_PROFILES,
+  type SupportedConfigProfileId,
+} from '@/lib/configProfiles';
 
 const DEFAULT_DRAFT: LocalDraft = {
   metadata: {
@@ -57,7 +68,8 @@ export function ConfigView() {
 
   // Device Command Inputs (separate from draft as per contract)
   const [mappingBundle, setMappingBundle] = useState({ bundle_id: 0, version: 0, integrity: 0 });
-  const [profileId, setProfileId] = useState(0);
+  const [selectedProfileId, setSelectedProfileId] = useState<SupportedConfigProfileId>(DEFAULT_CONFIG_PROFILE_ID);
+  const [deviceProfileId, setDeviceProfileId] = useState<number>(0);
   const [bondingMaterial, setBondingMaterial] = useState<number[]>([]);
 
   const transportRef = useRef(new SerialConfigTransport());
@@ -79,6 +91,8 @@ export function ConfigView() {
   }, []);
 
   const hasUnsavedChanges = JSON.stringify(draft) !== lastSavedDraft;
+  const selectedProfile = getSupportedConfigProfile(selectedProfileId) ?? SUPPORTED_CONFIG_PROFILES[0];
+  const persistedDeviceProfile = getSupportedConfigProfile(deviceProfileId);
 
   // --- Local Actions ---
 
@@ -116,6 +130,23 @@ export function ConfigView() {
     setDeviceStatus('Browser storage cleared.');
   };
 
+  const persistToDevice = async () => {
+    if (!validateLocal()) {
+      return;
+    }
+
+    try {
+      const mappingDocument = compileLocalDraftToMappingDocument(draft);
+      await runDeviceCommand('config.persist', {
+        mapping_document: mappingDocument,
+        profile_id: selectedProfileId,
+        bonding_material: bondingMaterial.length > 0 ? bondingMaterial : undefined
+      });
+    } catch (err: any) {
+      setDeviceError(err?.message || 'Failed to compile mapping document');
+    }
+  };
+
   const exportJson = () => {
     const blob = new Blob([JSON.stringify(draft, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -146,6 +177,79 @@ export function ConfigView() {
 
   // --- Device Actions ---
 
+  const syncDevicePayload = (payload: any, command: string) => {
+    setDeviceConfig(payload ?? null);
+
+    if (payload?.mapping_bundle) {
+      setMappingBundle(payload.mapping_bundle);
+    }
+
+    if (typeof payload?.profile_id === 'number') {
+      setDeviceProfileId(payload.profile_id);
+
+      if (isSupportedConfigProfileId(payload.profile_id)) {
+        setSelectedProfileId(payload.profile_id);
+      } else {
+        setDeviceError(
+          `${command} returned unsupported profile_id=${payload.profile_id}. This UI supports only profile_id=1 and profile_id=2.`,
+        );
+      }
+    }
+  };
+
+  const formatCommandStatus = (command: string, payload: any = {}) => {
+    if (command === 'config.persist') {
+      const profile = getSupportedConfigProfile(payload?.profile_id);
+      return profile
+        ? `Persisted ${profile.name} to device.`
+        : 'Persisted configuration to device.';
+    }
+
+    if (command === 'config.load') {
+      return 'Loaded persisted device configuration metadata.';
+    }
+
+    if (command === 'config.get_capabilities') {
+      return 'Fetched device config capabilities.';
+    }
+
+    if (command === 'config.clear') {
+      return 'Cleared device configuration.';
+    }
+
+    return `${command} successful.`;
+  };
+
+  const formatCommandError = (command: string, payload: any, response: ConfigResponseEnvelope) => {
+    const profile = getSupportedConfigProfile(payload?.profile_id);
+    const faultCategory = response.fault?.category;
+
+    if (command === 'config.persist' && profile && faultCategory === 'kUnsupportedCapability') {
+      return `Device rejected ${profile.name} (profile_id=${profile.id}) on the config path.`;
+    }
+
+    if (command === 'config.persist' && profile && faultCategory === 'kConfigurationRejected') {
+      return `Device rejected the ${profile.name} mapping configuration. Check the draft values and try again.`;
+    }
+
+    if (command === 'config.persist' && profile && faultCategory === 'kInvalidRequest') {
+      return `Device rejected the ${profile.name} persist payload as invalid.`;
+    }
+
+    if (command === 'config.load' && faultCategory === 'kUnsupportedCapability') {
+      return 'Device rejected config.load for the current serial config contract.';
+    }
+
+    if (command === 'config.get_capabilities' && faultCategory === 'kUnsupportedCapability') {
+      return 'Device rejected config.get_capabilities for the current serial config contract.';
+    }
+
+    const details = response.fault?.category
+      ? `${response.fault.category} (reason ${response.fault.reason})`
+      : response.status;
+    return `${command} failed: ${details}`;
+  };
+
   const runDeviceCommand = async (command: string, payload: any = {}) => {
     if (!canUseSerial) return;
     if (serialOwner !== 'none' && serialOwner !== 'config') {
@@ -155,7 +259,12 @@ export function ConfigView() {
 
     setIsConnecting(true);
     setDeviceError(null);
-    setDeviceStatus(`Executing ${command}...`);
+    if (command === 'config.persist') {
+      const profile = getSupportedConfigProfile(payload?.profile_id);
+      setDeviceStatus(profile ? `Executing ${command} for ${profile.name}...` : `Executing ${command}...`);
+    } else {
+      setDeviceStatus(`Executing ${command}...`);
+    }
 
     // Explicitly claim owner
     logSerialLifecycleEvent('config', 'owner_acquire_requested', { currentOwner: serialOwner, command });
@@ -166,7 +275,7 @@ export function ConfigView() {
       logSerialLifecycleEvent('config', 'owner_acquire_succeeded', { command });
 
       const request: ConfigRequestEnvelope = {
-        protocol_version: 1,
+        protocol_version: SUPPORTED_CONFIG_PROTOCOL_VERSION,
         request_id: nextRequestId.current++,
         command: command as any,
         payload,
@@ -176,19 +285,18 @@ export function ConfigView() {
       const response = await transportRef.current.sendCommand(request);
 
       if (response.status === 'kOk') {
-        setDeviceStatus(`${command} successful.`);
+        setDeviceStatus(formatCommandStatus(command, payload));
         if (command === 'config.get_capabilities') setCapabilities(response.capabilities);
-        if (command === 'config.load') {
-          setDeviceConfig(response.payload);
-          if (response.payload?.mapping_bundle) {
-            setMappingBundle(response.payload.mapping_bundle);
-          }
-          if (response.payload?.profile_id) {
-            setProfileId(response.payload.profile_id);
-          }
+        if (command === 'config.persist' || command === 'config.load') {
+          syncDevicePayload(response.payload, command);
+        }
+        if (command === 'config.clear') {
+          setDeviceConfig(null);
+          setMappingBundle({ bundle_id: 0, version: 0, integrity: 0 });
+          setDeviceProfileId(0);
         }
       } else {
-        setDeviceError(`${command} failed: ${response.status} ${response.fault?.category || ''}`);
+        setDeviceError(formatCommandError(command, payload, response));
       }
     } catch (err: any) {
       logSerialLifecycleEvent('config', 'owner_acquire_failed', { command, message: err?.message ?? 'transport_error' });
@@ -243,7 +351,7 @@ export function ConfigView() {
         <div>
           <h3 className="font-semibold text-blue-950">Truth Boundary</h3>
           <p className="mt-1 opacity-90 leading-relaxed">
-            The rich draft editor below is for <strong>local planning</strong>. The ESP32-S3 firmware currently persists only a <strong>mapping bundle reference</strong> (ID, version, integrity) and <strong>profile ID</strong>. It does not store the full JSON draft.
+            The draft editor below is the browser-side source of truth. On persist, the app sends a <strong>versioned mapping document</strong> over serial, the firmware compiles it into a <strong>runtime-effective bundle</strong>, and the device stores that compiled bundle plus bundle metadata. The device does <strong>not</strong> retain the raw local JSON draft.
           </p>
         </div>
       </div>
@@ -424,14 +532,53 @@ export function ConfigView() {
             </div>
             <div className="p-6 space-y-6">
               <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-[11px] font-bold text-gray-400 uppercase">Target Output Profile</label>
+                  <div className="space-y-2">
+                    {SUPPORTED_CONFIG_PROFILES.map((profile) => {
+                      const selected = selectedProfileId === profile.id;
+                      return (
+                        <label
+                          key={profile.id}
+                          className={`flex items-start gap-3 rounded-xl border p-3 transition-colors ${
+                            selected ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white hover:border-gray-300'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="target-profile"
+                            value={profile.id}
+                            checked={selected}
+                            disabled={isConnecting || serialOwner === 'flash'}
+                            onChange={() => setSelectedProfileId(profile.id)}
+                            className="mt-1 text-blue-600"
+                          />
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-semibold text-gray-900">{profile.name}</span>
+                              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-500">
+                                profile_id={profile.id}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-[11px] leading-relaxed text-gray-500">{profile.summary}</p>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[11px] text-gray-500 leading-relaxed">
+                    This selector exposes the shipped profile contract for this branch. <strong>Get Capabilities</strong> confirms the
+                    serial config path only; it does not dynamically enumerate profile IDs.
+                  </p>
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-bold text-gray-400 uppercase">Bundle ID</label>
                     <input
                       type="number"
                       value={mappingBundle.bundle_id}
-                      onChange={e => setMappingBundle(prev => ({ ...prev, bundle_id: parseInt(e.target.value) }))}
-                      className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-50 focus:bg-white transition-colors outline-none"
+                      readOnly
+                      className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-50 text-gray-600 outline-none"
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -439,8 +586,8 @@ export function ConfigView() {
                     <input
                       type="number"
                       value={mappingBundle.version}
-                      onChange={e => setMappingBundle(prev => ({ ...prev, version: parseInt(e.target.value) }))}
-                      className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-50 focus:bg-white transition-colors outline-none"
+                      readOnly
+                      className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-50 text-gray-600 outline-none"
                     />
                   </div>
                 </div>
@@ -450,29 +597,34 @@ export function ConfigView() {
                     <input
                       type="number"
                       value={mappingBundle.integrity}
-                      onChange={e => setMappingBundle(prev => ({ ...prev, integrity: parseInt(e.target.value) }))}
-                      className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-50 focus:bg-white transition-colors outline-none"
+                      readOnly
+                      className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-50 text-gray-600 outline-none"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-[11px] font-bold text-gray-400 uppercase">Profile ID</label>
-                    <input
-                      type="number"
-                      value={profileId}
-                      onChange={e => setProfileId(parseInt(e.target.value))}
-                      className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-50 focus:bg-white transition-colors outline-none"
-                    />
+                    <label className="text-[11px] font-bold text-gray-400 uppercase">Persisted Device Profile</label>
+                    <div className="w-full rounded-lg border bg-gray-50 px-3 py-2 text-sm text-gray-600">
+                      {deviceProfileId === 0 && (
+                        <span>Not loaded yet</span>
+                      )}
+                      {deviceProfileId !== 0 && persistedDeviceProfile && (
+                        <span>{persistedDeviceProfile.name} (`profile_id={persistedDeviceProfile.id}`)</span>
+                      )}
+                      {deviceProfileId !== 0 && !persistedDeviceProfile && (
+                        <span className="text-red-600">Unsupported profile_id={deviceProfileId}</span>
+                      )}
+                    </div>
                   </div>
                 </div>
+                <p className="text-[11px] text-gray-500 leading-relaxed">
+                  The next persist will use <strong>{selectedProfile.name}</strong> (`profile_id={selectedProfile.id}`). Successful load and persist
+                  responses will re-sync this selector to the device-reported profile when it is supported.
+                </p>
               </div>
 
               <div className="space-y-2 pt-4">
                 <button
-                  onClick={() => runDeviceCommand('config.persist', {
-                    mapping_bundle: mappingBundle,
-                    profile_id: profileId,
-                    bonding_material: bondingMaterial.length > 0 ? bondingMaterial : undefined
-                  })}
+                  onClick={persistToDevice}
                   disabled={!canUseSerial || isConnecting || serialOwner === 'flash'}
                   className="w-full flex items-center justify-center gap-2 py-2.5 bg-gray-900 text-white rounded-xl text-sm font-semibold hover:bg-gray-800 disabled:opacity-50 transition-all shadow-sm"
                 >

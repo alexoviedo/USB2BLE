@@ -15,6 +15,9 @@ concurrency:
   group: "pages"
   cancel-in-progress: true
 
+env:
+  WEB_NODE_VERSION: '20.19.4'
+
 jobs:
   build-firmware:
     name: Build ESP32-S3 Firmware
@@ -55,7 +58,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: ${{ env.WEB_NODE_VERSION }}
           cache: 'npm'
           cache-dependency-path: 'charm-web-companion/package-lock.json'
 
@@ -107,6 +110,15 @@ jobs:
       - name: Build Webapp
         working-directory: charm-web-companion
         run: npm run build
+
+      - name: Generate Web Deploy Summary
+        if: always()
+        run: |
+          echo "## Web Deploy Build Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Node.js: \`${{ env.WEB_NODE_VERSION }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Build command: \`cd charm-web-companion && npm run build\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Firmware artifact source: \`build-firmware\` job output" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Job Status: \`${{ job.status }}\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

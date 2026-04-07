@@ -29,7 +29,7 @@ TEST_F(MappingEngineTest, DirectEventApplicationAxis) {
   entry.source_type = charm::contracts::InputElementType::kAxis;
   entry.target.type = LogicalElementType::kAxis;
   entry.target.index = 0;
-  entry.scale = 2;
+  entry.scale = 2 * kMappingScaleOne;
   entry.offset = 5;
 
   bundle.entries[0] = entry;
@@ -46,6 +46,7 @@ TEST_F(MappingEngineTest, DirectEventApplicationAxis) {
 
   auto apply_result = engine_->ApplyInputEvent(request);
   EXPECT_EQ(apply_result.status, charm::contracts::ContractStatus::kOk);
+  EXPECT_TRUE(apply_result.mapped);
 
   GetLogicalStateRequest get_req{};
   get_req.profile_id = profile_id_;
@@ -67,7 +68,7 @@ TEST_F(MappingEngineTest, DirectEventApplicationButton) {
   entry.source_type = charm::contracts::InputElementType::kButton;
   entry.target.type = LogicalElementType::kButton;
   entry.target.index = 1;
-  entry.scale = 1;
+  entry.scale = kMappingScaleOne;
   entry.offset = 0;
 
   bundle.entries[0] = entry;
@@ -84,6 +85,7 @@ TEST_F(MappingEngineTest, DirectEventApplicationButton) {
 
   auto apply_result = engine_->ApplyInputEvent(request);
   EXPECT_EQ(apply_result.status, charm::contracts::ContractStatus::kOk);
+  EXPECT_TRUE(apply_result.mapped);
 
   GetLogicalStateRequest get_req{};
   get_req.profile_id = profile_id_;
@@ -117,7 +119,7 @@ TEST_F(MappingEngineTest, UnmappedEventIgnored) {
   entry.source_type = charm::contracts::InputElementType::kAxis;
   entry.target.type = LogicalElementType::kAxis;
   entry.target.index = 0;
-  entry.scale = 1;
+  entry.scale = kMappingScaleOne;
   entry.offset = 0;
 
   bundle.entries[0] = entry;
@@ -134,6 +136,7 @@ TEST_F(MappingEngineTest, UnmappedEventIgnored) {
 
   auto apply_result = engine_->ApplyInputEvent(request);
   EXPECT_EQ(apply_result.status, charm::contracts::ContractStatus::kOk);
+  EXPECT_FALSE(apply_result.mapped);
 
   GetLogicalStateRequest get_req{};
   get_req.profile_id = profile_id_;
@@ -153,7 +156,7 @@ TEST_F(MappingEngineTest, StateReset) {
   entry.source_type = charm::contracts::InputElementType::kAxis;
   entry.target.type = LogicalElementType::kAxis;
   entry.target.index = 0;
-  entry.scale = 1;
+  entry.scale = kMappingScaleOne;
   entry.offset = 0;
 
   bundle.entries[0] = entry;
@@ -181,6 +184,43 @@ TEST_F(MappingEngineTest, StateReset) {
 
   auto get_result_after = engine_->GetLogicalState(get_req);
   EXPECT_EQ(get_result_after.snapshot.state->axes[0].value, 0);
+}
+
+TEST_F(MappingEngineTest, AppliesDeadzoneScaleAndClampForAxes) {
+  CompiledMappingBundle bundle{};
+  bundle.bundle_ref.bundle_id = 91;
+  bundle.bundle_ref.version = kSupportedMappingBundleVersion;
+  bundle.entry_count = 1;
+
+  MappingEntry entry{};
+  entry.source.value = 700;
+  entry.source_type = charm::contracts::InputElementType::kAxis;
+  entry.target.type = LogicalElementType::kAxis;
+  entry.target.index = 2;
+  entry.scale = -2 * kMappingScaleOne;
+  entry.deadzone = 10;
+  entry.clamp_min = -50;
+  entry.clamp_max = 50;
+  bundle.entries[0] = entry;
+  bundle.bundle_ref.integrity = ComputeMappingBundleHash(bundle);
+
+  ApplyInputEventRequest request{};
+  request.active_bundle = &bundle;
+  request.active_bundle_ref = bundle.bundle_ref;
+  request.input_event.element_key_hash.value = 700;
+  request.input_event.element_type = charm::contracts::InputElementType::kAxis;
+  request.input_event.value = 40;
+  request.input_event.timestamp.ticks = 3000;
+
+  const auto apply_result = engine_->ApplyInputEvent(request);
+  EXPECT_EQ(apply_result.status, charm::contracts::ContractStatus::kOk);
+  EXPECT_TRUE(apply_result.mapped);
+
+  const auto get_result = engine_->GetLogicalState({.profile_id = profile_id_});
+  ASSERT_EQ(get_result.status, charm::contracts::ContractStatus::kOk);
+
+  // Deadzone rescales 40 -> 32, scale -2 -> -64, then clamp -> -50.
+  EXPECT_EQ(get_result.snapshot.state->axes[2].value, -50);
 }
 
 }  // namespace charm::core

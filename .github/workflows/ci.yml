@@ -7,6 +7,9 @@ on:
       - main
       - production-closeout-real-usb-ble
 
+env:
+  WEB_NODE_VERSION: '20.19.4'
+
 jobs:
   unit-tests:
     name: ci / unit-tests
@@ -23,6 +26,42 @@ jobs:
 
       - name: Run unit tests
         run: ctest --test-dir build/unit --output-on-failure
+
+  web-quality:
+    name: ci / web-quality
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: charm-web-companion
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.WEB_NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: charm-web-companion/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run web tests
+        run: npx vitest run
+
+      - name: Build web companion
+        run: npm run build
+
+      - name: Generate Web Lane Summary
+        if: always()
+        run: |
+          echo "## Web Companion Lane Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Node.js: \`${{ env.WEB_NODE_VERSION }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tests: \`npx vitest run\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Build: \`npm run build\` (includes Next.js type validation)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Lint: deferred to 2026-04-20 due current \`@rushstack/eslint-patch\` incompatibility with ESLint 9 in this repo" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Job Status: \`${{ job.status }}\`" >> "$GITHUB_STEP_SUMMARY"
 
   build-firmware:
     name: ci / build-firmware (esp32s3)
@@ -50,3 +89,23 @@ jobs:
           echo "- **Target:** esp32s3" >> "$GITHUB_STEP_SUMMARY"
           echo "- **IDF Version:** latest" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Job Status:** ${{ job.status }}" >> "$GITHUB_STEP_SUMMARY"
+
+  ci-summary:
+    name: ci / summary
+    if: always()
+    needs:
+      - unit-tests
+      - web-quality
+      - build-firmware
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate CI Summary
+        run: |
+          echo "## CI Lane Status" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Lane | Result | Notes |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Firmware host tests | \`${{ needs.unit-tests.result }}\` | \`cmake -S tests/unit -B build/unit && cmake --build build/unit --parallel && ctest --test-dir build/unit --output-on-failure\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Web companion | \`${{ needs.web-quality.result }}\` | \`npm ci && npx vitest run && npm run build\` under Node \`${{ env.WEB_NODE_VERSION }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| ESP-IDF firmware build | \`${{ needs.build-firmware.result }}\` | \`idf.py build\` for \`esp32s3\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Deferred check: web lint remains out of PR enforcement until 2026-04-20 because the current \`npm run lint\` path fails inside \`@rushstack/eslint-patch\` with ESLint 9 before repository lint rules can execute." >> "$GITHUB_STEP_SUMMARY"
