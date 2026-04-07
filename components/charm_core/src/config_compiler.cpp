@@ -8,6 +8,7 @@
 #include <cstring>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 #include "charm/core/decode_plan.hpp"
@@ -50,6 +51,16 @@ struct ParsedDocument {
   std::vector<AxisRule> axes{};
   std::vector<ButtonRule> buttons{};
 };
+
+template <typename T>
+void ZeroTrivialObject(T* object) {
+  static_assert(std::is_trivially_copyable_v<T>,
+                "byte-wise zeroing requires trivial object layout");
+  if (object == nullptr) {
+    return;
+  }
+  std::memset(object, 0, sizeof(T));
+}
 
 void AppendDiagnostic(CompileDiagnostics* diagnostics, DiagnosticSeverity severity,
                       charm::contracts::ErrorCategory category,
@@ -631,12 +642,13 @@ bool CompileDocument(const ParsedDocument& parsed, CompiledMappingBundle* bundle
   }
 
   std::array<MappingEntry, kMaxMappingEntries> pending_entries{};
+  std::memset(pending_entries.data(), 0, sizeof(pending_entries));
   std::size_t pending_entry_count = 0;
   std::array<bool, 4> used_axis_targets{};
   std::array<bool, 16> used_button_targets{};
   std::array<bool, kMaxCompilerAnalogSources> used_axis_sources{};
   std::array<bool, kMaxCompilerButtonSources> used_button_sources{};
-  *bundle = {};
+  ZeroTrivialObject(bundle);
   bundle->bundle_ref.version = kSupportedMappingBundleVersion;
 
   auto add_axis_entry = [&](const AxisRule& rule, std::size_t location) -> bool {
@@ -838,6 +850,7 @@ charm::contracts::ElementKeyHash MakeCompilerSourceHash(
 ValidateConfigResult DefaultConfigCompiler::ValidateConfig(
     const ValidateConfigRequest& request) const {
   ValidateConfigResult result{};
+  ZeroTrivialObject(&result);
   ParsedDocument parsed{};
   if (!ParseDocument(request.document, &parsed, &result.diagnostics,
                      &result.fault_code)) {
@@ -846,6 +859,7 @@ ValidateConfigResult DefaultConfigCompiler::ValidateConfig(
   }
 
   CompiledMappingBundle bundle{};
+  ZeroTrivialObject(&bundle);
   if (!CompileDocument(parsed, &bundle, &result.diagnostics, &result.fault_code)) {
     result.status = charm::contracts::ContractStatus::kRejected;
     return result;
@@ -858,6 +872,7 @@ ValidateConfigResult DefaultConfigCompiler::ValidateConfig(
 CompileConfigResult DefaultConfigCompiler::CompileConfig(
     const CompileConfigRequest& request) const {
   CompileConfigResult result{};
+  ZeroTrivialObject(&result);
   ParsedDocument parsed{};
   if (!ParseDocument(request.document, &parsed, &result.diagnostics,
                      &result.fault_code)) {
