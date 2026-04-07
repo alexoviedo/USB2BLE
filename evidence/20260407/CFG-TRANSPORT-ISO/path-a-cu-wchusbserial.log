@@ -1,2 +1,0 @@
-
-SUMMARY {"bytes_received": 0, "bytes_sent": 114, "command": "config.get_capabilities", "has_cfg_frame": false, "open_params": {"baudrate": 115200, "signals": "default", "timeout": 0.2, "write_timeout": 1}, "path": "A", "port": "/dev/cu.wchusbserial5B5E0200881", "raw_ascii_preview": "", "raw_hex_preview": ""}

@@ -1,7 +1,7 @@
 # Browser Roundtrip Proof
 
 Date: 2026-04-07
-Repo: `/Users/alex/Developer/CodexUSB/USB2BLE`
+Repo: `USB2BLE`
 Branch: `codex/freeze-contract-plan`
 HEAD under test: `ce0023b392bb5c388a4ad92804d1075c9ade179e`
 
@@ -11,17 +11,12 @@ Goal: retain a human-observed browser proof for the post-fix config flow at `htt
 
 Browser reachability precheck:
 
-- [web-root-check.log](/Users/alex/Developer/CodexUSB/USB2BLE/evidence/20260407/CFG-BROWSER-ROUNDTRIP/artifacts/20260407T085246Z-web-root-check.log)
+- `evidence/20260407/CFG-BROWSER-ROUNDTRIP/artifacts/20260407T085246Z-web-root-check.log`
 
-User-provided screenshot sources for this proof:
+Observation source:
 
-- [Screen Shot 2026-04-07 at 2.55.03 AM.png](/Users/alex/Desktop/Screen%20Shot%202026-04-07%20at%202.55.03%20AM.png)
-- [Screen Shot 2026-04-07 at 2.55.24 AM.png](/Users/alex/Desktop/Screen%20Shot%202026-04-07%20at%202.55.24%20AM.png)
-- [Screen Shot 2026-04-07 at 2.55.45 AM.png](/Users/alex/Desktop/Screen%20Shot%202026-04-07%20at%202.55.45%20AM.png)
-- [Screen Shot 2026-04-07 at 2.56.15 AM.png](/Users/alex/Desktop/Screen%20Shot%202026-04-07%20at%202.56.15%20AM.png)
-- [Screen Shot 2026-04-07 at 2.56.40 AM.png](/Users/alex/Desktop/Screen%20Shot%202026-04-07%20at%202.56.40%20AM.png)
-- [Screen Shot 2026-04-07 at 2.56.59 AM.png](/Users/alex/Desktop/Screen%20Shot%202026-04-07%20at%202.56.59%20AM.png)
-- [Screen Shot 2026-04-07 at 2.57.25 AM.png](/Users/alex/Desktop/Screen%20Shot%202026-04-07%20at%202.57.25%20AM.png)
+- operator-observed browser run recorded live on 2026-04-07
+- retained result summary in `evidence/20260407/CFG-BROWSER-ROUNDTRIP/result.json`
 
 ## Selected Port
 

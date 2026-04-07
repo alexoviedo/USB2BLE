@@ -37,7 +37,6 @@ Automated testing does not prove these:
 
 As of April 7, 2026, retained hardware evidence is no longer empty, but it is not release-complete:
 
-- environment/bootstrap readiness is retained under `evidence/20260407/ENV-READY/`
 - transport binding is retained under `evidence/20260407/CFG-TRANSPORT-AUDIT/`
 - postfix shell transport proof for `config.get_capabilities` is retained under `evidence/20260407/CFG-TRANSPORT-POSTFIX/`
 - browser roundtrip evidence is retained under `evidence/20260407/CFG-BROWSER-ROUNDTRIP/`
@@ -73,14 +72,15 @@ Web companion:
 
 ```bash
 cd charm-web-companion
-PATH=/Users/alex/.nvm/versions/node/v20.19.4/bin:$PATH npx vitest run
-PATH=/Users/alex/.nvm/versions/node/v20.19.4/bin:$PATH npm run build
+npm ci
+npx vitest run
+npm run build
 ```
 
 Firmware image build:
 
 ```bash
-source /Users/alex/esp/esp-idf/export.sh
+source /path/to/esp-idf/export.sh
 idf.py build
 ```
 

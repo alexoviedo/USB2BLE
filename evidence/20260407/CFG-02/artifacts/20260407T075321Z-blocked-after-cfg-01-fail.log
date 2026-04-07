@@ -1,1 +1,0 @@
-CFG-02 not rerun on 2026-04-07 because CFG-01 failed post-fix with browser timeout and no @CFG response frame. Per protocol, execution stopped and returned to T2/T3 loop.

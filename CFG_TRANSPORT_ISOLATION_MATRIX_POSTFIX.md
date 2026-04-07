@@ -1,7 +1,7 @@
 # CFG Transport Isolation Matrix Postfix
 
 Date: 2026-04-07
-Repo: `/Users/alex/Developer/CodexUSB/USB2BLE`
+Repo: `USB2BLE`
 Branch: `codex/freeze-contract-plan`
 HEAD under test: `ce0023b392bb5c388a4ad92804d1075c9ade179e`
 
@@ -11,7 +11,7 @@ Goal: convert the post-fix transport result from a one-off success into retained
 
 Fresh image provenance for this matrix:
 
-- current branch build flashed via [idf-flash-current-build.log](/Users/alex/Developer/CodexUSB/USB2BLE/evidence/20260407/CFG-TRANSPORT-POSTFIX/artifacts/20260407T084916Z-idf-flash-current-build.log)
+- current branch build flashed via `evidence/20260407/CFG-TRANSPORT-POSTFIX/artifacts/20260407T084916Z-idf-flash-current-build.log`
 
 Visible host serial candidates during this run:
 
@@ -24,7 +24,7 @@ Host metadata shows those are aliases for the same USB serial device, not two di
 - `serial=5B5E020088`
 - `location=20-6`
 
-See [host-port-metadata.log](/Users/alex/Developer/CodexUSB/USB2BLE/evidence/20260407/CFG-TRANSPORT-POSTFIX/artifacts/20260407T084949Z-host-port-metadata.log).
+See `evidence/20260407/CFG-TRANSPORT-POSTFIX/artifacts/20260407T084949Z-host-port-metadata.log`.
 
 ## Result Summary
 
@@ -61,7 +61,7 @@ Partial pass only.
 - `config.clear` timed out
 - `config.load` after clear failed again with `kContractViolation (reason 0)`
 
-Browser details are retained separately in [browser-roundtrip-proof.md](/Users/alex/Developer/CodexUSB/USB2BLE/browser-roundtrip-proof.md).
+Browser details are retained separately in `browser-roundtrip-proof.md`.
 
 ## Matrix
 
@@ -76,7 +76,7 @@ Browser details are retained separately in [browser-roundtrip-proof.md](/Users/a
 
 Browser proof source:
 
-- [browser-roundtrip-proof.md](/Users/alex/Developer/CodexUSB/USB2BLE/browser-roundtrip-proof.md)
+- `browser-roundtrip-proof.md`
 
 What the browser run proves:
 
@@ -92,7 +92,7 @@ What the browser run does not prove:
 
 Superseded artifact:
 
-- [20260407T085006Z-raw-probe-wch-get-capabilities.log](/Users/alex/Developer/CodexUSB/USB2BLE/evidence/20260407/CFG-TRANSPORT-POSTFIX/artifacts/20260407T085006Z-raw-probe-wch-get-capabilities.log)
+- `evidence/20260407/CFG-TRANSPORT-POSTFIX/artifacts/20260407T085006Z-raw-probe-wch-get-capabilities.log`
 
 Reason it is excluded from the passing matrix:
 
@@ -101,8 +101,8 @@ Reason it is excluded from the passing matrix:
 
 Likewise, the earlier repro wrapper artifacts with impossible latency are excluded in favor of the byte-accurate `v3` artifacts:
 
-- [repro-tool-wch-get-capabilities-v3.log](/Users/alex/Developer/CodexUSB/USB2BLE/evidence/20260407/CFG-TRANSPORT-POSTFIX/artifacts/20260407T085203Z-repro-tool-wch-get-capabilities-v3.log)
-- [repro-tool-usbmodem-get-capabilities-v3.log](/Users/alex/Developer/CodexUSB/USB2BLE/evidence/20260407/CFG-TRANSPORT-POSTFIX/artifacts/20260407T085219Z-repro-tool-usbmodem-get-capabilities-v3.log)
+- `evidence/20260407/CFG-TRANSPORT-POSTFIX/artifacts/20260407T085203Z-repro-tool-wch-get-capabilities-v3.log`
+- `evidence/20260407/CFG-TRANSPORT-POSTFIX/artifacts/20260407T085219Z-repro-tool-usbmodem-get-capabilities-v3.log`
 
 ## Bottom Line
 

@@ -1,7 +1,7 @@
 # CFG Transport Binding Audit
 
 Date: 2026-04-07
-Repo: `/Users/alex/Developer/CodexUSB/USB2BLE`
+Repo: `USB2BLE`
 Branch: `codex/freeze-contract-plan`
 HEAD under audit: `ce0023b392bb5c388a4ad92804d1075c9ade179e`
 
@@ -28,31 +28,31 @@ In other words, the code binding path was correct; the misleading symptom came f
 
 Evidence bundle:
 
-- [commands.txt](/Users/alex/Developer/CodexUSB/USB2BLE/evidence/20260407/CFG-TRANSPORT-AUDIT/commands.txt)
-- [result.json](/Users/alex/Developer/CodexUSB/USB2BLE/evidence/20260407/CFG-TRANSPORT-AUDIT/result.json)
-- [host-serial-ports.log](/Users/alex/Developer/CodexUSB/USB2BLE/evidence/20260407/CFG-TRANSPORT-AUDIT/artifacts/20260407T083016Z-host-serial-ports.log)
-- [unit-build-runtime-adapter.log](/Users/alex/Developer/CodexUSB/USB2BLE/evidence/20260407/CFG-TRANSPORT-AUDIT/artifacts/20260407T083019Z-unit-build-runtime-adapter.log)
-- [unit-test-runtime-adapter.log](/Users/alex/Developer/CodexUSB/USB2BLE/evidence/20260407/CFG-TRANSPORT-AUDIT/artifacts/20260407T083028Z-unit-test-runtime-adapter.log)
-- [idf-build.log](/Users/alex/Developer/CodexUSB/USB2BLE/evidence/20260407/CFG-TRANSPORT-AUDIT/artifacts/20260407T083036Z-idf-build.log)
-- [idf-flash-wch.log](/Users/alex/Developer/CodexUSB/USB2BLE/evidence/20260407/CFG-TRANSPORT-AUDIT/artifacts/20260407T083141Z-idf-flash-wch.log)
-- [repro-wch-get-capabilities.log](/Users/alex/Developer/CodexUSB/USB2BLE/evidence/20260407/CFG-TRANSPORT-AUDIT/artifacts/20260407T083211Z-repro-wch-get-capabilities.log)
-- [repro-usbmodem-get-capabilities.log](/Users/alex/Developer/CodexUSB/USB2BLE/evidence/20260407/CFG-TRANSPORT-AUDIT/artifacts/20260407T083220Z-repro-usbmodem-get-capabilities.log)
-- [host-port-metadata.log](/Users/alex/Developer/CodexUSB/USB2BLE/evidence/20260407/CFG-TRANSPORT-AUDIT/artifacts/20260407T083247Z-host-port-metadata.log)
+- `evidence/20260407/CFG-TRANSPORT-AUDIT/commands.txt`
+- `evidence/20260407/CFG-TRANSPORT-AUDIT/result.json`
+- `evidence/20260407/CFG-TRANSPORT-AUDIT/artifacts/20260407T083016Z-host-serial-ports.log`
+- `evidence/20260407/CFG-TRANSPORT-AUDIT/artifacts/20260407T083019Z-unit-build-runtime-adapter.log`
+- `evidence/20260407/CFG-TRANSPORT-AUDIT/artifacts/20260407T083028Z-unit-test-runtime-adapter.log`
+- `evidence/20260407/CFG-TRANSPORT-AUDIT/artifacts/20260407T083036Z-idf-build.log`
+- `evidence/20260407/CFG-TRANSPORT-AUDIT/artifacts/20260407T083141Z-idf-flash-wch.log`
+- `evidence/20260407/CFG-TRANSPORT-AUDIT/artifacts/20260407T083211Z-repro-wch-get-capabilities.log`
+- `evidence/20260407/CFG-TRANSPORT-AUDIT/artifacts/20260407T083220Z-repro-usbmodem-get-capabilities.log`
+- `evidence/20260407/CFG-TRANSPORT-AUDIT/artifacts/20260407T083247Z-host-port-metadata.log`
 
 ## Current Binding
 
 Source inspection shows the config transport runtime is hard-bound to `UART_NUM_0` for both directions:
 
-- Incoming config bytes are read via `uart_read_bytes(UART_NUM_0, ...)` in [app_bootstrap.cpp:133](/Users/alex/Developer/CodexUSB/USB2BLE/components/charm_app/src/app_bootstrap.cpp#L133).
-- Outgoing `@CFG:` frames are written via `uart_write_bytes(UART_NUM_0, ...)` in [app_bootstrap.cpp:110](/Users/alex/Developer/CodexUSB/USB2BLE/components/charm_app/src/app_bootstrap.cpp#L110).
-- The runtime is installed and started from [app_bootstrap.cpp:177](/Users/alex/Developer/CodexUSB/USB2BLE/components/charm_app/src/app_bootstrap.cpp#L177) through [app_bootstrap.cpp:219](/Users/alex/Developer/CodexUSB/USB2BLE/components/charm_app/src/app_bootstrap.cpp#L219).
+- Incoming config bytes are read via `uart_read_bytes(UART_NUM_0, ...)` in `components/charm_app/src/app_bootstrap.cpp` around line `133`.
+- Outgoing `@CFG:` frames are written via `uart_write_bytes(UART_NUM_0, ...)` in `components/charm_app/src/app_bootstrap.cpp` around line `110`.
+- The runtime is installed and started from `components/charm_app/src/app_bootstrap.cpp` around lines `177-219`.
 
 Retained observability hooks for this path:
 
-- Compile-time audit guard `CHARM_CFG_TRANSPORT_BINDING_AUDIT` remains in [app_bootstrap.cpp](/Users/alex/Developer/CodexUSB/USB2BLE/components/charm_app/src/app_bootstrap.cpp) and now defaults to `0`, so detailed audit logs are opt-in.
-- Bootstrap anomaly warnings remain always available in [app_bootstrap.cpp](/Users/alex/Developer/CodexUSB/USB2BLE/components/charm_app/src/app_bootstrap.cpp) for `driver_install`, `param_config`, and `task_create` failures.
-- Write-path anomaly warnings remain always available in [app_bootstrap.cpp](/Users/alex/Developer/CodexUSB/USB2BLE/components/charm_app/src/app_bootstrap.cpp), but are bounded to one warning per continuous stall streak rather than one warning per loop iteration.
-- Read / parse / emit counters remain exposed by [config_transport_runtime_adapter.hpp](/Users/alex/Developer/CodexUSB/USB2BLE/components/charm_app/include/charm/app/config_transport_runtime_adapter.hpp) and [config_transport_runtime_adapter.cpp](/Users/alex/Developer/CodexUSB/USB2BLE/components/charm_app/src/config_transport_runtime_adapter.cpp) so unit tests and intentional audit builds can observe the transport path without leaving verbose logging on by default.
+- Compile-time audit guard `CHARM_CFG_TRANSPORT_BINDING_AUDIT` remains in `components/charm_app/src/app_bootstrap.cpp` and now defaults to `0`, so detailed audit logs are opt-in.
+- Bootstrap anomaly warnings remain always available in `components/charm_app/src/app_bootstrap.cpp` for `driver_install`, `param_config`, and `task_create` failures.
+- Write-path anomaly warnings remain always available in `components/charm_app/src/app_bootstrap.cpp`, but are bounded to one warning per continuous stall streak rather than one warning per loop iteration.
+- Read / parse / emit counters remain exposed by `components/charm_app/include/charm/app/config_transport_runtime_adapter.hpp` and `components/charm_app/src/config_transport_runtime_adapter.cpp` so unit tests and intentional audit builds can observe the transport path without leaving verbose logging on by default.
 
 ## Expected Host Path
 
@@ -70,7 +70,7 @@ The port metadata audit shows they are not two different USB devices. Both resol
 - `location=20-6`
 - `product="USB Single Serial"`
 
-See [host-port-metadata.log](/Users/alex/Developer/CodexUSB/USB2BLE/evidence/20260407/CFG-TRANSPORT-AUDIT/artifacts/20260407T083247Z-host-port-metadata.log).
+See `evidence/20260407/CFG-TRANSPORT-AUDIT/artifacts/20260407T083247Z-host-port-metadata.log`.
 
 ## Hardware Proof
 
@@ -81,7 +81,7 @@ The flashed audit build booted successfully and the runtime came up cleanly:
 - `cfg_transport_audit: runtime started port=0 baud=115200`
 - `cfg_transport_audit: bootstrap port=0 baud=115200 install_rc=0 param_rc=0 task_rc=1`
 
-Those lines appear in both [repro-wch-get-capabilities.log](/Users/alex/Developer/CodexUSB/USB2BLE/evidence/20260407/CFG-TRANSPORT-AUDIT/artifacts/20260407T083211Z-repro-wch-get-capabilities.log) and [repro-usbmodem-get-capabilities.log](/Users/alex/Developer/CodexUSB/USB2BLE/evidence/20260407/CFG-TRANSPORT-AUDIT/artifacts/20260407T083220Z-repro-usbmodem-get-capabilities.log).
+Those lines appear in both `evidence/20260407/CFG-TRANSPORT-AUDIT/artifacts/20260407T083211Z-repro-wch-get-capabilities.log` and `evidence/20260407/CFG-TRANSPORT-AUDIT/artifacts/20260407T083220Z-repro-usbmodem-get-capabilities.log`.
 
 ### WCH-hosted repro
 
@@ -95,7 +95,7 @@ The host then received a framed reply:
 - `@CFG:{... "command":"config.get_capabilities","status":"kOk", ...}`
 - summary: `has_cfg_frame: true`, `response_bytes: 496`
 
-See [repro-wch-get-capabilities.log](/Users/alex/Developer/CodexUSB/USB2BLE/evidence/20260407/CFG-TRANSPORT-AUDIT/artifacts/20260407T083211Z-repro-wch-get-capabilities.log).
+See `evidence/20260407/CFG-TRANSPORT-AUDIT/artifacts/20260407T083211Z-repro-wch-get-capabilities.log`.
 
 ### usbmodem-hosted repro
 
@@ -109,7 +109,7 @@ The host again received a framed reply:
 - `@CFG:{... "command":"config.get_capabilities","status":"kOk", ...}`
 - summary: `has_cfg_frame: true`, `response_bytes: 496`
 
-See [repro-usbmodem-get-capabilities.log](/Users/alex/Developer/CodexUSB/USB2BLE/evidence/20260407/CFG-TRANSPORT-AUDIT/artifacts/20260407T083220Z-repro-usbmodem-get-capabilities.log).
+See `evidence/20260407/CFG-TRANSPORT-AUDIT/artifacts/20260407T083220Z-repro-usbmodem-get-capabilities.log`.
 
 ## Mismatch Analysis
 

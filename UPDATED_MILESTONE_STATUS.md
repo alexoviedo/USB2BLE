@@ -7,9 +7,8 @@ Validated on `codex/freeze-contract-plan` using the current local branch state.
 Verification commands:
 - `cmake --build build/unit --parallel`
 - `ctest --test-dir build/unit --output-on-failure`
-- `cd charm-web-companion && PATH=/Users/alex/.nvm/versions/node/v20.19.4/bin:$PATH npx vitest run`
-- `cd charm-web-companion && PATH=/Users/alex/.nvm/versions/node/v20.19.4/bin:$PATH npm run build`
-- `bash -lc 'source /Users/alex/esp/esp-idf/export.sh && idf.py build'`
+- `cd charm-web-companion && npm ci && npx vitest run && npm run build`
+- `source /path/to/esp-idf/export.sh && idf.py build`
 
 Observed results:
 - Firmware CTest: `20/20` passing
@@ -27,7 +26,7 @@ Observed results:
 | M3 | complete | Dual-profile manager, encoders, and BLE-facing contract wiring are implemented and covered by automated tests. | Hardware BLE evidence still belongs to M6, not M3 |
 | M4 | complete | Serial-first `@CFG:` `v2` config/apply flow is implemented, locally tested, and documented. | None |
 | M5 | complete | Web Config UX exposes profiles `1` and `2`, PR CI enforces web tests/build, and the web companion docs match the current contract. | Web lint remains intentionally deferred outside the enforced PR lane until `2026-04-20` |
-| M6 | partial | Retained evidence now exists for environment readiness, transport binding, and postfix transport isolation. Current branch truth is mixed: shell/browser `config.get_capabilities` is proven on the current flashed image, but browser `persist/load/clear/load` is still failing and most mandatory hardware scenarios remain unexecuted. | Release remains blocked by failed `CFG-BROWSER-ROUNDTRIP` evidence and the still-missing USB/BLE/OPS/STG/REL retained scenarios |
+| M6 | partial | Retained evidence now exists for transport binding, postfix transport isolation, and the current browser roundtrip lane. Current branch truth is mixed: shell/browser `config.get_capabilities` is proven on the current flashed image, but browser `persist/load/clear/load` is still failing and most mandatory hardware scenarios remain unexecuted. | Release remains blocked by failed `CFG-BROWSER-ROUNDTRIP` evidence and the still-missing USB/BLE/OPS/STG/REL retained scenarios |
 
 ## Completed Milestones And Slices Not To Reopen
 

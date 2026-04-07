@@ -56,10 +56,10 @@
 | Lane | Command | Result | Notes |
 | --- | --- | --- | --- |
 | Firmware host tests | `cmake -S tests/unit -B build/unit && cmake --build build/unit --parallel && ctest --test-dir build/unit --output-on-failure` | pass | `20/20` tests passed |
-| Web tests | `cd charm-web-companion && PATH=/Users/alex/.nvm/versions/node/v20.19.4/bin:$PATH npx vitest run` | pass | `60` passed |
-| Web build | `cd charm-web-companion && PATH=/Users/alex/.nvm/versions/node/v20.19.4/bin:$PATH npm run build` | pass | production static build succeeded |
-| Web lint | `cd charm-web-companion && PATH=/Users/alex/.nvm/versions/node/v20.19.4/bin:$PATH npm run lint` | deferred/failing | blocked by current `@rushstack/eslint-patch` + ESLint 9 incompatibility |
-| ESP-IDF local build | `bash -lc 'source /Users/alex/esp/esp-idf/export.sh && idf.py build'` | pass | local shell proof now matches the enforced GitHub Actions firmware-build lane |
+| Web tests | `cd charm-web-companion && npx vitest run` | pass | `60` passed under Node `20.19.4` |
+| Web build | `cd charm-web-companion && npm run build` | pass | production static build succeeded under Node `20.19.4` |
+| Web lint | `cd charm-web-companion && npm run lint` | deferred/failing | blocked by current `@rushstack/eslint-patch` + ESLint 9 incompatibility |
+| ESP-IDF local build | `source /path/to/esp-idf/export.sh && idf.py build` | pass | local shell proof now matches the enforced GitHub Actions firmware-build lane |
 
 ## Summary Output Shape
 - The PR CI summary now produces a single lane table in `ci / summary`.

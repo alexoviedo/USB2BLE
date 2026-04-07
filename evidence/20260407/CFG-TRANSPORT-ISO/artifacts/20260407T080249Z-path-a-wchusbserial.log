@@ -1,4 +1,0 @@
-  File "<stdin>", line 4
-    frame = @CFG:protocol_version:2n
-                                  ^
-SyntaxError: invalid decimal literal

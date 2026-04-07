@@ -52,7 +52,8 @@ Companion static web runtime for the Charm ESP32-S3 firmware project.
     ```
 3.  **Run tests**:
     ```bash
-    PATH=/Users/alex/.nvm/versions/node/v20.19.4/bin:$PATH npx vitest run
+    npm ci
+    npx vitest run
     ```
 
 ## Build & Static Deployment
@@ -61,7 +62,7 @@ The webapp is automatically deployed to GitHub Pages at: [https://alexoviedo.git
 
 1.  **Generate static build**:
     ```bash
-    PATH=/Users/alex/.nvm/versions/node/v20.19.4/bin:$PATH npm run build
+    npm run build
     ```
     The output will be in the `out/` directory (standard Next.js static export).
 

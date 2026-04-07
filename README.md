@@ -73,9 +73,12 @@ What is still not proven and currently failing in retained evidence:
 
 Current evidence entry points:
 
-- [CFG_TRANSPORT_BINDING_AUDIT.md](/Users/alex/Developer/CodexUSB/USB2BLE/CFG_TRANSPORT_BINDING_AUDIT.md)
-- [CFG_TRANSPORT_ISOLATION_MATRIX_POSTFIX.md](/Users/alex/Developer/CodexUSB/USB2BLE/CFG_TRANSPORT_ISOLATION_MATRIX_POSTFIX.md)
-- [browser-roundtrip-proof.md](/Users/alex/Developer/CodexUSB/USB2BLE/browser-roundtrip-proof.md)
+- [CFG_TRANSPORT_BINDING_AUDIT.md](CFG_TRANSPORT_BINDING_AUDIT.md)
+- [CFG_TRANSPORT_ISOLATION_MATRIX_POSTFIX.md](CFG_TRANSPORT_ISOLATION_MATRIX_POSTFIX.md)
+- [browser-roundtrip-proof.md](browser-roundtrip-proof.md)
+- `evidence/20260407/CFG-TRANSPORT-AUDIT/`
+- `evidence/20260407/CFG-TRANSPORT-POSTFIX/`
+- `evidence/20260407/CFG-BROWSER-ROUNDTRIP/`
 
 ## Repo Entry Points
 
@@ -101,14 +104,15 @@ Web companion:
 
 ```bash
 cd charm-web-companion
-PATH=/Users/alex/.nvm/versions/node/v20.19.4/bin:$PATH npx vitest run
-PATH=/Users/alex/.nvm/versions/node/v20.19.4/bin:$PATH npm run build
+npm ci
+npx vitest run
+npm run build
 ```
 
 Firmware image build:
 
 ```bash
-source /Users/alex/esp/esp-idf/export.sh
+source /path/to/esp-idf/export.sh
 idf.py build
 ```
 
