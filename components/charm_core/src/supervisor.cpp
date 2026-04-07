@@ -5,18 +5,21 @@
 namespace charm::core {
 
 charm::contracts::StartResult DefaultSupervisor::Start(const charm::contracts::StartRequest& /*request*/) {
+  const std::lock_guard<std::mutex> lock(mutex_);
   return charm::contracts::StartResult{
       .status = charm::contracts::ContractStatus::kOk,
       .fault_code = {charm::contracts::ErrorCategory::kInvalidState, 0}}; // kInvalidState since kNone is not an enum value
 }
 
 charm::contracts::StopResult DefaultSupervisor::Stop(const charm::contracts::StopRequest& /*request*/) {
+  const std::lock_guard<std::mutex> lock(mutex_);
   return charm::contracts::StopResult{
       .status = charm::contracts::ContractStatus::kOk,
       .fault_code = {charm::contracts::ErrorCategory::kInvalidState, 0}};
 }
 
 charm::contracts::ModeTransitionResult DefaultSupervisor::TransitionMode(const charm::contracts::ModeTransitionRequest& request) {
+  const std::lock_guard<std::mutex> lock(mutex_);
   charm::contracts::ModeTransitionResult result{};
 
   if (state_.recovery_state != charm::contracts::RecoveryState::kNone) {
@@ -42,6 +45,7 @@ charm::contracts::ModeTransitionResult DefaultSupervisor::TransitionMode(const c
 }
 
 charm::contracts::ActivateMappingBundleResult DefaultSupervisor::ActivateMappingBundle(const charm::contracts::ActivateMappingBundleRequest& request) {
+  const std::lock_guard<std::mutex> lock(mutex_);
   charm::contracts::ActivateMappingBundleResult result{};
 
   if (state_.recovery_state != charm::contracts::RecoveryState::kNone) {
@@ -56,6 +60,7 @@ charm::contracts::ActivateMappingBundleResult DefaultSupervisor::ActivateMapping
 }
 
 charm::contracts::SelectProfileResult DefaultSupervisor::SelectProfile(const charm::contracts::SelectProfileRequest& request) {
+  const std::lock_guard<std::mutex> lock(mutex_);
   charm::contracts::SelectProfileResult result{};
 
   if (state_.recovery_state != charm::contracts::RecoveryState::kNone) {
@@ -70,6 +75,7 @@ charm::contracts::SelectProfileResult DefaultSupervisor::SelectProfile(const cha
 }
 
 charm::contracts::RecoveryResult DefaultSupervisor::RequestRecovery(const charm::contracts::RecoveryRequest& request) {
+  const std::lock_guard<std::mutex> lock(mutex_);
   charm::contracts::RecoveryResult result{};
 
   // Transition to kRequested, then to kRecovering, then to kNone.
@@ -114,10 +120,12 @@ charm::contracts::RecoveryResult DefaultSupervisor::RequestRecovery(const charm:
 }
 
 void DefaultSupervisor::SetLastFault(const charm::contracts::FaultRecordRef& fault) {
+  const std::lock_guard<std::mutex> lock(mutex_);
   state_.last_fault = fault;
 }
 
 SupervisorState DefaultSupervisor::GetState() const {
+  const std::lock_guard<std::mutex> lock(mutex_);
   return state_;
 }
 

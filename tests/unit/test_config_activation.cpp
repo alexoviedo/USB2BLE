@@ -70,7 +70,7 @@ TEST_F(ConfigActivationTest, IgnoresActivationWhenStoreFails) {
             charm::contracts::ContractStatus::kUnavailable);
 }
 
-TEST_F(ConfigActivationTest, IgnoresActivationWhenCompiledBundleBlobIsMissing) {
+TEST_F(ConfigActivationTest, ActivatesLegacyPersistedConfigWhenCompiledBundleBlobIsMissing) {
   auto bundle = MakeBundle();
   charm::contracts::LoadConfigResult mock_result{};
   mock_result.status = charm::contracts::ContractStatus::kOk;
@@ -81,8 +81,30 @@ TEST_F(ConfigActivationTest, IgnoresActivationWhenCompiledBundleBlobIsMissing) {
   charm::app::ActivatePersistedConfig(fake_store_, loader_, supervisor_);
 
   const auto state = supervisor_.GetState();
+  EXPECT_EQ(state.active_mapping_bundle.mapping_bundle.bundle_id, 42u);
+  EXPECT_EQ(state.active_profile.profile_id.value, 1u);
+  EXPECT_EQ(loader_.GetActiveBundle({}).status,
+            charm::contracts::ContractStatus::kUnavailable);
+}
+
+TEST_F(ConfigActivationTest, IgnoresActivationWhenCompiledBundleBlobIsMalformed) {
+  auto bundle = MakeBundle();
+  charm::contracts::LoadConfigResult mock_result{};
+  mock_result.status = charm::contracts::ContractStatus::kOk;
+  mock_result.mapping_bundle = bundle.bundle_ref;
+  mock_result.compiled_mapping_bundle =
+      reinterpret_cast<const std::uint8_t*>(&bundle);
+  mock_result.compiled_mapping_bundle_size = sizeof(bundle) - 1;
+  mock_result.profile_id.value = 1;
+  fake_store_.SetLoadConfigResult(mock_result);
+
+  charm::app::ActivatePersistedConfig(fake_store_, loader_, supervisor_);
+
+  const auto state = supervisor_.GetState();
   EXPECT_EQ(state.active_mapping_bundle.mapping_bundle.bundle_id, 0u);
   EXPECT_EQ(state.active_profile.profile_id.value, 0u);
+  EXPECT_EQ(loader_.GetActiveBundle({}).status,
+            charm::contracts::ContractStatus::kUnavailable);
 }
 
 }  // namespace

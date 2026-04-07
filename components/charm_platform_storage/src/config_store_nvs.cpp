@@ -67,6 +67,7 @@ charm::contracts::LoadConfigResult ConfigStoreNvs::LoadConfig(const charm::contr
   if (nvs_get_blob(handle, kBondKey, nullptr, &bond_length) == 0 && bond_length > 0) {
     temp_bonding_material = new std::uint8_t[bond_length];
     if (nvs_get_blob(handle, kBondKey, temp_bonding_material, &bond_length) != 0) {
+      delete[] temp_compiled_bundle;
       delete[] temp_bonding_material;
       result.status = charm::contracts::ContractStatus::kFailed;
       nvs_close(handle);

@@ -204,4 +204,35 @@ TEST(MappingBundleTest, ClearActiveBundleDropsLoadedState) {
   EXPECT_EQ(get_result.bundle, nullptr);
 }
 
+TEST(MappingBundleTest, ActiveBundleSnapshotSurvivesSubsequentClear) {
+  CompiledMappingBundle bundle{};
+  bundle.bundle_ref.bundle_id = 99;
+  bundle.bundle_ref.version = kSupportedMappingBundleVersion;
+  bundle.entry_count = 1;
+  bundle.entries[0] = {
+      .source = {654},
+      .source_type = charm::contracts::InputElementType::kAxis,
+      .target = {LogicalElementType::kAxis, 0},
+      .scale = kMappingScaleOne,
+      .offset = 0};
+  bundle.bundle_ref.integrity = charm::core::ComputeMappingBundleHash(bundle);
+
+  DefaultMappingBundleValidator validator;
+  DefaultMappingBundleLoader loader(&validator);
+
+  ASSERT_EQ(loader.Load({&bundle}).status, charm::contracts::ContractStatus::kOk);
+
+  const auto snapshot_result = loader.GetActiveBundle({});
+  ASSERT_EQ(snapshot_result.status, charm::contracts::ContractStatus::kOk);
+  ASSERT_NE(snapshot_result.bundle, nullptr);
+  EXPECT_EQ(snapshot_result.bundle->bundle_ref.bundle_id, 99u);
+
+  loader.ClearActiveBundle();
+
+  // The caller-visible snapshot stays stable even if another task clears the
+  // active bundle after GetActiveBundle() returns.
+  EXPECT_EQ(snapshot_result.bundle->bundle_ref.bundle_id, 99u);
+  EXPECT_EQ(snapshot_result.bundle->entry_count, 1u);
+}
+
 }  // namespace charm::core::test
