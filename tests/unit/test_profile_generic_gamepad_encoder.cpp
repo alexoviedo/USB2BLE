@@ -37,8 +37,10 @@ TEST_F(ProfileGenericGamepadEncoderTest, CapabilitiesAreCorrect) {
 
   EXPECT_EQ(result.status, charm::contracts::ContractStatus::kOk);
   EXPECT_EQ(result.descriptor.profile_id.value, 1u);
-  EXPECT_STREQ(result.descriptor.name, "Generic Gamepad");
+  EXPECT_STREQ(result.descriptor.name, "Generic BLE Gamepad");
   EXPECT_GT(result.descriptor.name_length, 0u);
+  EXPECT_EQ(result.descriptor.report_id, 1u);
+  EXPECT_EQ(result.descriptor.report_size, sizeof(GenericGamepadReport));
   EXPECT_GT(result.descriptor.capability_count, 0u);
   EXPECT_NE(result.descriptor.capabilities, nullptr);
 }

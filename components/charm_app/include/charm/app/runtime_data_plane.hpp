@@ -31,6 +31,7 @@ class RuntimeDataPlane final : public charm::ports::UsbHostPortListener {
                    charm::core::DecodePlanBuilder& decode_plan_builder,
                    charm::core::HidDecoder& hid_decoder,
                    charm::core::MappingEngine& mapping_engine,
+                   charm::core::MappingBundleLoader& mapping_bundle_loader,
                    charm::core::ProfileManager& profile_manager,
                    charm::core::Supervisor& supervisor);
 
@@ -59,6 +60,12 @@ class RuntimeDataPlane final : public charm::ports::UsbHostPortListener {
     charm::contracts::InterfaceHandle interface_handle{};
   };
 
+  struct CanonicalSourceBinding {
+    charm::contracts::ElementKeyHash source{};
+    charm::contracts::InputElementType source_type{
+        charm::contracts::InputElementType::kUnknown};
+  };
+
   static std::uint32_t MakeInterfaceKey(charm::contracts::InterfaceHandle interface_handle);
   charm::core::CompiledMappingBundle BuildRuntimeBundle(
       const InterfaceContext& context,
@@ -68,6 +75,8 @@ class RuntimeDataPlane final : public charm::ports::UsbHostPortListener {
   void RebuildRuntimeBundlesLocked();
   std::unordered_map<std::uint64_t, charm::core::LogicalElementRef>
   ComputeTargetAssignmentsLocked(std::uint32_t bundle_seed) const;
+  std::unordered_map<std::uint64_t, CanonicalSourceBinding>
+  ComputeCanonicalSourceAssignmentsLocked() const;
   static std::uint64_t MakeSourceKey(charm::contracts::ElementKeyHash source,
                                      charm::contracts::InputElementType source_type);
   static std::uint32_t StableMix(std::uint32_t seed, std::uint32_t value);
@@ -83,11 +92,14 @@ class RuntimeDataPlane final : public charm::ports::UsbHostPortListener {
   charm::core::DecodePlanBuilder& decode_plan_builder_;
   charm::core::HidDecoder& hid_decoder_;
   charm::core::MappingEngine& mapping_engine_;
+  charm::core::MappingBundleLoader& mapping_bundle_loader_;
   charm::core::ProfileManager& profile_manager_;
   charm::core::Supervisor& supervisor_;
 
   std::mutex mutex_{};
   std::unordered_map<std::uint32_t, InterfaceContext> interface_contexts_{};
+  std::unordered_map<std::uint64_t, CanonicalSourceBinding>
+      canonical_source_assignments_{};
 };
 
 }  // namespace charm::app

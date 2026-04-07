@@ -8,6 +8,9 @@ import {
   sameSerialPortIdentity,
 } from '../serialLifecycle';
 
+const COMMAND_TIMEOUT_MS = 5000;
+const POST_OPEN_SETTLE_MS = 400;
+
 /**
  * SerialConfigTransport handles the framing and transport of @CFG: commands
  * over a Web Serial port. It respects the 2048-byte frame limit and
@@ -58,6 +61,8 @@ export class SerialConfigTransport implements ConfigTransportAdapter {
       throw new ConfigError('Serial port is busy or unavailable.', 'PORT_BUSY');
     }
 
+    await this.ensureStableSignals(this.port);
+
     // Set up writer
     const textEncoder = new TextEncoderStream();
     this.writableStreamClosed = textEncoder.readable.pipeTo(this.port.writable!);
@@ -66,6 +71,7 @@ export class SerialConfigTransport implements ConfigTransportAdapter {
     // Set up reader
     this.keepReading = true;
     this.readLoopPromise = this.startReading();
+    await this.delay(POST_OPEN_SETTLE_MS);
   }
 
   async disconnect(): Promise<void> {
@@ -157,17 +163,27 @@ export class SerialConfigTransport implements ConfigTransportAdapter {
       throw new ConfigError('Oversized frame rejected (max 2048 bytes)', 'kCapacityExceeded');
     }
 
-    await this.writer.write(frame);
-
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.responseWaiters.delete(request.request_id);
         reject(new ConfigError(`Command ${request.command} timed out (ID: ${request.request_id})`, 'kTimeout'));
-      }, 5000);
+      }, COMMAND_TIMEOUT_MS);
 
       this.responseWaiters.set(request.request_id, (res) => {
         clearTimeout(timeout);
+        this.responseWaiters.delete(request.request_id);
         resolve(res);
+      });
+
+      this.writer!.write(frame).catch((error: any) => {
+        clearTimeout(timeout);
+        this.responseWaiters.delete(request.request_id);
+        reject(
+          new ConfigError(
+            `Failed to send ${request.command}: ${error?.message ?? 'transport write failed'}`,
+            'kTransportFailure',
+          ),
+        );
       });
     });
   }
@@ -187,11 +203,28 @@ export class SerialConfigTransport implements ConfigTransportAdapter {
         const waiter = this.responseWaiters.get(response.request_id);
         if (waiter) {
           waiter(response);
-          this.responseWaiters.delete(response.request_id);
         }
       } catch (e: any) {
         console.error('Failed to parse @CFG frame:', e.message);
       }
+    }
+  }
+
+  private async ensureStableSignals(port: SerialPort): Promise<void> {
+    if (typeof port.setSignals !== 'function') {
+      return;
+    }
+
+    try {
+      // Match the console attach behavior so config commands do not hold
+      // ESP32 reset/boot strap lines in an asserted state on USB-UART bridges.
+      await port.setSignals({ dataTerminalReady: false, requestToSend: false });
+      this.logEvent('signals_deasserted', { identity: getSerialPortIdentity(port) });
+    } catch (error: any) {
+      this.logEvent('signals_deassert_failed', {
+        identity: getSerialPortIdentity(port),
+        message: error?.message ?? 'unknown',
+      });
     }
   }
 
@@ -218,6 +251,10 @@ export class SerialConfigTransport implements ConfigTransportAdapter {
 
   private logEvent(event: string, data: Record<string, unknown>) {
     logSerialLifecycleEvent('config', event, data);
+  }
+
+  private async delay(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**

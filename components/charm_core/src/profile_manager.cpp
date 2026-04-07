@@ -3,14 +3,34 @@
 namespace charm::core {
 
 namespace {
-constexpr charm::contracts::ProfileId kGenericGamepadProfileId{1};
+
+bool IsSupportedProfile(charm::contracts::ProfileId profile_id) {
+  return profile_id.value == kGenericBleGamepadProfileId.value ||
+         profile_id.value == kWirelessXboxControllerProfileId.value;
+}
+
+GetProfileCapabilitiesResult GetCapabilitiesForProfile(
+    charm::contracts::ProfileId profile_id) {
+  if (profile_id.value == kGenericBleGamepadProfileId.value) {
+    return profile_generic_gamepad::GetCapabilities();
+  }
+  if (profile_id.value == kWirelessXboxControllerProfileId.value) {
+    return profile_wireless_xbox_controller::GetCapabilities();
+  }
+
+  GetProfileCapabilitiesResult result{};
+  result.status = charm::contracts::ContractStatus::kFailed;
+  result.fault_code.category =
+      charm::contracts::ErrorCategory::kUnsupportedCapability;
+  return result;
+}
 }  // namespace
 
 charm::contracts::SelectProfileResult CanonicalProfileManager::SelectProfile(
     const charm::contracts::SelectProfileRequest& request) {
   charm::contracts::SelectProfileResult result{};
 
-  if (request.profile_id.value == kGenericGamepadProfileId.value) {
+  if (IsSupportedProfile(request.profile_id)) {
     selected_profile_ = request.profile_id;
     result.status = charm::contracts::ContractStatus::kOk;
   } else {
@@ -31,8 +51,11 @@ EncodeLogicalStateResult CanonicalProfileManager::EncodeLogicalState(
     return result;
   }
 
-  if (request.profile_id.value == kGenericGamepadProfileId.value) {
+  if (request.profile_id.value == kGenericBleGamepadProfileId.value) {
     return profile_generic_gamepad::Encode(request);
+  }
+  if (request.profile_id.value == kWirelessXboxControllerProfileId.value) {
+    return profile_wireless_xbox_controller::Encode(request);
   }
 
   result.status = charm::contracts::ContractStatus::kFailed;
@@ -42,14 +65,20 @@ EncodeLogicalStateResult CanonicalProfileManager::EncodeLogicalState(
 
 GetProfileCapabilitiesResult CanonicalProfileManager::GetProfileCapabilities(
     const GetProfileCapabilitiesRequest& request) const {
-  GetProfileCapabilitiesResult result{};
+  return GetCapabilitiesForProfile(request.profile_id);
+}
 
-  if (request.profile_id.value == kGenericGamepadProfileId.value) {
-    return profile_generic_gamepad::GetCapabilities();
-  }
+GetSupportedProfilesResult CanonicalProfileManager::GetSupportedProfiles(
+    const GetSupportedProfilesRequest& /*request*/) const {
+  GetSupportedProfilesResult result{};
+  result.status = charm::contracts::ContractStatus::kOk;
 
-  result.status = charm::contracts::ContractStatus::kFailed;
-  result.fault_code.category = charm::contracts::ErrorCategory::kUnsupportedCapability;
+  const auto generic = profile_generic_gamepad::GetCapabilities();
+  const auto xbox = profile_wireless_xbox_controller::GetCapabilities();
+
+  result.descriptors[0] = generic.descriptor;
+  result.descriptors[1] = xbox.descriptor;
+  result.descriptor_count = 2;
   return result;
 }
 

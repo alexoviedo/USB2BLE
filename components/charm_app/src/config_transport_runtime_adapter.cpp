@@ -32,7 +32,7 @@ charm::contracts::ConfigTransportResponse MakeParserRejection(
 }  // namespace
 
 ConfigTransportRuntimeAdapter::ConfigTransportRuntimeAdapter(
-    const ConfigTransportService& service)
+    ConfigTransportService& service)
     : service_(service) {}
 
 void ConfigTransportRuntimeAdapter::ConsumeBytes(const std::uint8_t* bytes,
@@ -74,6 +74,7 @@ void ConfigTransportRuntimeAdapter::ConsumeBytes(const std::uint8_t* bytes,
       continue;
     }
     payload_begin += kControlPrefix.size();
+    ++stats_.parsed_frames;
     const auto payload = frame.substr(payload_begin);
     const auto response = HandleFrame(payload);
     output_frames_.push_back(SerializeResponseFrame(response));
@@ -93,6 +94,7 @@ bool ConfigTransportRuntimeAdapter::WritePendingFrame(
   }
 
   output_frames_.erase(output_frames_.begin());
+  ++stats_.emitted_frames;
   return true;
 }
 
@@ -100,12 +102,18 @@ bool ConfigTransportRuntimeAdapter::HasPendingFrame() const {
   return !output_frames_.empty();
 }
 
+ConfigTransportRuntimeStats ConfigTransportRuntimeAdapter::Stats() const {
+  return stats_;
+}
+
 charm::contracts::ConfigTransportResponse ConfigTransportRuntimeAdapter::HandleFrame(
     const std::string& frame) const {
   charm::contracts::ConfigTransportRequest request{};
   std::vector<std::uint8_t> bonding_material_storage;
+  std::string mapping_document_storage;
 
-  if (!ParseRequestFrame(frame, &request, &bonding_material_storage)) {
+  if (!ParseRequestFrame(frame, &request, &bonding_material_storage,
+                         &mapping_document_storage)) {
     return MakeParserRejection(charm::contracts::ErrorCategory::kInvalidRequest,
                                kReasonMalformedFrame);
   }
@@ -114,14 +122,21 @@ charm::contracts::ConfigTransportResponse ConfigTransportRuntimeAdapter::HandleF
     request.bonding_material = bonding_material_storage.data();
     request.bonding_material_size = bonding_material_storage.size();
   }
+  if (!mapping_document_storage.empty()) {
+    request.mapping_document = reinterpret_cast<const std::uint8_t*>(
+        mapping_document_storage.data());
+    request.mapping_document_size = mapping_document_storage.size();
+  }
 
   return service_.HandleRequest(request);
 }
 
 bool ConfigTransportRuntimeAdapter::ParseRequestFrame(
     const std::string& frame, charm::contracts::ConfigTransportRequest* request,
-    std::vector<std::uint8_t>* bonding_material_storage) {
-  if (request == nullptr || bonding_material_storage == nullptr) {
+    std::vector<std::uint8_t>* bonding_material_storage,
+    std::string* mapping_document_storage) {
+  if (request == nullptr || bonding_material_storage == nullptr ||
+      mapping_document_storage == nullptr) {
     return false;
   }
 
@@ -168,24 +183,14 @@ bool ConfigTransportRuntimeAdapter::ParseRequestFrame(
 
   if (parsed_command == charm::contracts::ConfigTransportCommand::kPersist) {
     std::string payload_json;
-    std::string bundle_json;
-    std::uint32_t bundle_id = 0;
-    std::uint32_t version = 0;
-    std::uint32_t bundle_integrity = 0;
     std::uint32_t profile_id = 0;
 
     if (!ExtractObject(frame, "payload", &payload_json) ||
-        !ExtractObject(payload_json, "mapping_bundle", &bundle_json) ||
-        !ExtractUInt(bundle_json, "bundle_id", &bundle_id) ||
-        !ExtractUInt(bundle_json, "version", &version) ||
-        !ExtractUInt(bundle_json, "integrity", &bundle_integrity) ||
+        !ExtractObject(payload_json, "mapping_document", mapping_document_storage) ||
         !ExtractUInt(payload_json, "profile_id", &profile_id)) {
       return false;
     }
 
-    request->mapping_bundle.bundle_id = bundle_id;
-    request->mapping_bundle.version = version;
-    request->mapping_bundle.integrity = bundle_integrity;
     request->profile_id.value = profile_id;
 
     if (ExtractUIntArray(payload_json, "bonding_material",
@@ -227,7 +232,8 @@ std::string ConfigTransportRuntimeAdapter::SerializeResponseFrame(
       << ErrorCategoryToString(response.fault_code.category) << "\",";
   out << "\"reason\":" << response.fault_code.reason << "}";
 
-  if (response.command == charm::contracts::ConfigTransportCommand::kLoad) {
+  if (response.command == charm::contracts::ConfigTransportCommand::kPersist ||
+      response.command == charm::contracts::ConfigTransportCommand::kLoad) {
     out << ",\"payload\":{";
     out << "\"mapping_bundle\":{";
     out << "\"bundle_id\":" << response.mapping_bundle.bundle_id << ',';
@@ -421,6 +427,48 @@ bool ConfigTransportRuntimeAdapter::ExtractObject(const std::string& json,
       --depth;
       if (depth == 0) {
         *object_json = json.substr(begin, i - begin + 1);
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+bool ConfigTransportRuntimeAdapter::ExtractArray(const std::string& json,
+                                                 const char* key,
+                                                 std::string* array_json) {
+  if (key == nullptr || array_json == nullptr) {
+    return false;
+  }
+
+  const std::string quoted_key = std::string("\"") + key + "\"";
+  const auto key_pos = json.find(quoted_key);
+  if (key_pos == std::string::npos) {
+    return false;
+  }
+
+  const auto colon_pos = json.find(':', key_pos + quoted_key.size());
+  if (colon_pos == std::string::npos) {
+    return false;
+  }
+
+  auto begin = SkipWhitespace(json, colon_pos + 1);
+  if (begin >= json.size() || json[begin] != '[') {
+    return false;
+  }
+
+  std::size_t depth = 0;
+  for (std::size_t i = begin; i < json.size(); ++i) {
+    if (json[i] == '[') {
+      ++depth;
+    } else if (json[i] == ']') {
+      if (depth == 0) {
+        return false;
+      }
+      --depth;
+      if (depth == 0) {
+        *array_json = json.substr(begin, i - begin + 1);
         return true;
       }
     }

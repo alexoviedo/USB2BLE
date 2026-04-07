@@ -16,13 +16,19 @@ class SerialTransportWriter {
   virtual bool Write(const std::uint8_t* bytes, std::size_t size) = 0;
 };
 
+struct ConfigTransportRuntimeStats {
+  std::uint32_t parsed_frames{0};
+  std::uint32_t emitted_frames{0};
+};
+
 class ConfigTransportRuntimeAdapter {
  public:
-  explicit ConfigTransportRuntimeAdapter(const ConfigTransportService& service);
+  explicit ConfigTransportRuntimeAdapter(ConfigTransportService& service);
 
   void ConsumeBytes(const std::uint8_t* bytes, std::size_t size);
   bool WritePendingFrame(SerialTransportWriter& writer);
   bool HasPendingFrame() const;
+  ConfigTransportRuntimeStats Stats() const;
 
  private:
   static constexpr std::size_t kMaxFrameBytes = 2048;
@@ -33,7 +39,8 @@ class ConfigTransportRuntimeAdapter {
   static bool ParseRequestFrame(
       const std::string& frame,
       charm::contracts::ConfigTransportRequest* request,
-      std::vector<std::uint8_t>* bonding_material_storage);
+      std::vector<std::uint8_t>* bonding_material_storage,
+      std::string* mapping_document_storage);
 
   static std::string SerializeResponseFrame(
       const charm::contracts::ConfigTransportResponse& response);
@@ -47,15 +54,18 @@ class ConfigTransportRuntimeAdapter {
                             std::string* value);
   static bool ExtractObject(const std::string& json, const char* key,
                             std::string* object_json);
+  static bool ExtractArray(const std::string& json, const char* key,
+                           std::string* array_json);
   static bool ExtractUIntArray(const std::string& json, const char* key,
                                std::vector<std::uint8_t>* values);
   static std::size_t SkipWhitespace(const std::string& text, std::size_t pos);
   static bool ParseCommand(const std::string& command,
                            charm::contracts::ConfigTransportCommand* parsed);
 
-  const ConfigTransportService& service_;
+  ConfigTransportService& service_;
   std::string input_buffer_{};
   std::vector<std::string> output_frames_{};
+  ConfigTransportRuntimeStats stats_{};
 };
 
 }  // namespace charm::app

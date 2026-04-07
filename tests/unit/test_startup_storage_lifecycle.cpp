@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "charm/app/startup_storage_lifecycle.hpp"
+#include "charm/core/mapping_bundle.hpp"
 #include "charm/core/supervisor.hpp"
 #include "charm/test_support/fake_config_store_port.hpp"
 
@@ -24,6 +25,7 @@ int TestErase() {
 }
 
 void TestActivate(charm::ports::ConfigStorePort& /*store*/,
+                  charm::core::MappingBundleLoader& /*loader*/,
                   charm::core::Supervisor& /*supervisor*/) {
   ++g_activate_calls;
 }
@@ -31,6 +33,8 @@ void TestActivate(charm::ports::ConfigStorePort& /*store*/,
 class StartupStorageLifecycleTest : public ::testing::Test {
  protected:
   static constexpr int kRecoverableNoFreePages = 0x110d;
+
+  StartupStorageLifecycleTest() : loader_( &validator_) {}
 
   void SetUp() override {
     g_init_call_count = 0;
@@ -40,6 +44,11 @@ class StartupStorageLifecycleTest : public ::testing::Test {
     g_erase_return_value = 0;
     g_activate_calls = 0;
   }
+
+  charm::test_support::FakeConfigStorePort store_;
+  charm::core::DefaultMappingBundleValidator validator_;
+  charm::core::DefaultMappingBundleLoader loader_;
+  charm::core::DefaultSupervisor supervisor_;
 };
 
 TEST_F(StartupStorageLifecycleTest, InitializeStorageSucceedsOnFirstInit) {
@@ -78,27 +87,23 @@ TEST_F(StartupStorageLifecycleTest, InitializeStorageFailsWhenReinitStillFails) 
 
 TEST_F(StartupStorageLifecycleTest, InitFailureGatesConfigActivationAndRecordsFault) {
   g_init_return_values[0] = 9;
-  charm::test_support::FakeConfigStorePort store;
-  charm::core::DefaultSupervisor supervisor;
   const charm::app::StorageInitFns fns{&TestInit, &TestErase};
 
   const bool started = charm::app::InitializeStorageAndActivate(
-      store, supervisor, &TestActivate, fns);
+      store_, loader_, supervisor_, &TestActivate, fns);
   EXPECT_FALSE(started);
   EXPECT_EQ(g_activate_calls, 0);
-  const auto state = supervisor.GetState();
+  const auto state = supervisor_.GetState();
   EXPECT_EQ(state.last_fault.fault_code.category,
             charm::contracts::ErrorCategory::kPersistenceFailure);
   EXPECT_EQ(state.last_fault.fault_code.reason, 1u);
 }
 
 TEST_F(StartupStorageLifecycleTest, SuccessPathAllowsConfigActivation) {
-  charm::test_support::FakeConfigStorePort store;
-  charm::core::DefaultSupervisor supervisor;
   const charm::app::StorageInitFns fns{&TestInit, &TestErase};
 
   const bool started = charm::app::InitializeStorageAndActivate(
-      store, supervisor, &TestActivate, fns);
+      store_, loader_, supervisor_, &TestActivate, fns);
   EXPECT_TRUE(started);
   EXPECT_EQ(g_activate_calls, 1);
 }

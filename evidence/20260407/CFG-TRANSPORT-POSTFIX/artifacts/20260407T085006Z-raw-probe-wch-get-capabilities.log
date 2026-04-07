@@ -1,0 +1,2 @@
+
+SUMMARY {"boot_bytes": 3086, "boot_complete": true, "bytes_received": 0, "bytes_sent": 115, "command": "config.get_capabilities", "has_cfg_frame": false, "latency_ms": null, "open_params": {"baudrate": 115200, "boot_wait": true, "response_timeout_s": 4.0, "signals": "dtr=false,rts=false", "timeout": 0.2, "write_timeout": 1}, "path": "A", "port": "/dev/cu.wchusbserial5B5E0200881", "raw_ascii_preview": "", "raw_hex_preview": ""}

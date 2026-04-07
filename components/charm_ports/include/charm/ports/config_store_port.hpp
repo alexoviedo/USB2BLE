@@ -17,6 +17,8 @@ struct IntegrityMetadata {
 
 struct PersistedConfigRecord {
   charm::contracts::MappingBundleRef mapping_bundle{};
+  const std::uint8_t* compiled_mapping_bundle{nullptr};
+  std::size_t compiled_mapping_bundle_size{0};
   charm::contracts::ProfileId profile_id{};
   ConfigVersion config_version{};
   IntegrityMetadata integrity{};

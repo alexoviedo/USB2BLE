@@ -1,0 +1,14 @@
+scenario=CFG-BROWSER-ROUNDTRIP
+date=20260407
+repo_root=/Users/alex/Developer/CodexUSB/USB2BLE
+git_branch=codex/freeze-contract-plan
+git_commit=ce0023b
+initialized_at_utc=2026-04-07T08:49:12Z
+
+[2026-04-07T08:52:46Z]
+label=web-root-check
+cwd=/Users/alex/Developer/CodexUSB/USB2BLE
+output_log=artifacts/20260407T085246Z-web-root-check.log
+$ curl -I -sS http://localhost:3000/USB2BLE
+[exit 0]
+

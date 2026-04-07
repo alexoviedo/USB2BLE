@@ -1,0 +1,4 @@
+  File "<stdin>", line 30
+    if b@CFG: in buf:
+              ^^
+SyntaxError: invalid syntax

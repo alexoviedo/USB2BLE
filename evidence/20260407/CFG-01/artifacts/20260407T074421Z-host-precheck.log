@@ -1,0 +1,45 @@
+Test project /Users/alex/Developer/CodexUSB/USB2BLE/build/unit
+      Start  1: DeviceRegistryTest
+ 1/20 Test  #1: DeviceRegistryTest .........................   Passed    0.00 sec
+      Start  2: HidSemanticModelTest
+ 2/20 Test  #2: HidSemanticModelTest .......................   Passed    0.01 sec
+      Start  3: DecodePlanTest
+ 3/20 Test  #3: DecodePlanTest .............................   Passed    0.01 sec
+      Start  4: HidDecoderTest
+ 4/20 Test  #4: HidDecoderTest .............................   Passed    0.01 sec
+      Start  5: LogicalStateTest
+ 5/20 Test  #5: LogicalStateTest ...........................   Passed    0.01 sec
+      Start  6: MappingBundleTest
+ 6/20 Test  #6: MappingBundleTest ..........................   Passed    0.01 sec
+      Start  7: MappingEngineTest
+ 7/20 Test  #7: MappingEngineTest ..........................   Passed    0.01 sec
+      Start  8: ConfigCompilerTest
+ 8/20 Test  #8: ConfigCompilerTest .........................   Passed    0.01 sec
+      Start  9: ProfileManagerTest
+ 9/20 Test  #9: ProfileManagerTest .........................   Passed    0.01 sec
+      Start 10: ProfileGenericGamepadEncoderTest
+10/20 Test #10: ProfileGenericGamepadEncoderTest ...........   Passed    0.01 sec
+      Start 11: ProfileWirelessXboxControllerEncoderTest
+11/20 Test #11: ProfileWirelessXboxControllerEncoderTest ...   Passed    0.01 sec
+      Start 12: SupervisorTest
+12/20 Test #12: SupervisorTest .............................   Passed    0.01 sec
+      Start 13: RecoveryPolicyTest
+13/20 Test #13: RecoveryPolicyTest .........................   Passed    0.01 sec
+      Start 14: UsbHostAdapterTest
+14/20 Test #14: UsbHostAdapterTest .........................   Passed    0.01 sec
+      Start 15: BleTransportAdapterTest
+15/20 Test #15: BleTransportAdapterTest ....................   Passed    0.01 sec
+      Start 16: ConfigActivationTest
+16/20 Test #16: ConfigActivationTest .......................   Passed    0.01 sec
+      Start 17: ConfigTransportServiceTest
+17/20 Test #17: ConfigTransportServiceTest .................   Passed    0.01 sec
+      Start 18: RuntimeDataPlaneTest
+18/20 Test #18: RuntimeDataPlaneTest .......................   Passed    0.01 sec
+      Start 19: ConfigTransportRuntimeAdapterTest
+19/20 Test #19: ConfigTransportRuntimeAdapterTest ..........   Passed    0.01 sec
+      Start 20: StartupStorageLifecycleTest
+20/20 Test #20: StartupStorageLifecycleTest ................   Passed    0.01 sec
+
+100% tests passed, 0 tests failed out of 20
+
+Total Test time (real) =   0.19 sec

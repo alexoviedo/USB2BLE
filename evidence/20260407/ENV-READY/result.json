@@ -1,0 +1,17 @@
+{
+  "scenario": "ENV-READY",
+  "date_utc": "2026-04-07T02:20:19Z",
+  "result": "PASS",
+  "hardware": [],
+  "firmware_commit": "ce0023b",
+  "notes": "ESP-IDF shell environment restored, idf.py verified, and the firmware plus web baseline re-passed with bounded per-command logs. No remediation was required.",
+  "evidence": [
+    "commands.txt",
+    "artifacts/20260407T022019Z-which-idf.log",
+    "artifacts/20260407T022024Z-idf-version.log",
+    "artifacts/20260407T022031Z-cmake-build.log",
+    "artifacts/20260407T022033Z-ctest.log",
+    "artifacts/20260407T022034Z-web-vitest.log",
+    "artifacts/20260407T022044Z-web-build.log"
+  ]
+}

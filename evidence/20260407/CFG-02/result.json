@@ -1,0 +1,13 @@
+{
+  "scenario": "CFG-02",
+  "date_utc": "2026-04-07T07:53:21Z",
+  "result": "PENDING",
+  "hardware": ["HW-A"],
+  "firmware_commit": "ce0023b",
+  "notes": "Post-fix rerun blocked. CFG-02 was not re-executed because CFG-01 failed and protocol required an immediate stop and return to the T2/T3 loop.",
+  "evidence": [
+    "commands.txt",
+    "scenario-notes.md",
+    "artifacts/20260407T075321Z-blocked-after-cfg-01-fail.log"
+  ]
+}

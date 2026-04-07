@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isSupportedConfigProfileId } from './configProfiles';
 
 // ==========================================
 // Firmware Artifact Manifest Schema
@@ -63,9 +64,43 @@ export const MappingBundleRefSchema = z.object({
   integrity: z.number(),
 });
 
+export const MappingDocumentGlobalSchema = z.object({
+  scale: z.number().min(0.1).max(4.0),
+  deadzone: z.number().min(0.0).max(0.95),
+  clamp_min: z.number().min(-1.0).max(1.0),
+  clamp_max: z.number().min(-1.0).max(1.0),
+}).refine(data => data.clamp_min < data.clamp_max, {
+  message: 'clamp_min must be strictly less than clamp_max',
+  path: ['clamp_min'],
+});
+
+export const MappingDocumentAxisRuleSchema = z.object({
+  target: z.string().min(1),
+  source_index: z.number().int().min(0).max(7),
+  scale: z.number().min(0.1).max(4.0),
+  deadzone: z.number().min(0.0).max(0.95),
+  invert: z.boolean(),
+});
+
+export const MappingDocumentButtonRuleSchema = z.object({
+  target: z.string().min(1),
+  source_index: z.number().int().min(0).max(15),
+});
+
+export const MappingDocumentSchema = z.object({
+  version: z.literal(1),
+  global: MappingDocumentGlobalSchema,
+  axes: z.array(MappingDocumentAxisRuleSchema).max(8),
+  buttons: z.array(MappingDocumentButtonRuleSchema).max(16),
+});
+
+export const SupportedConfigProfileIdSchema = z.number().int().refine(isSupportedConfigProfileId, {
+  message: 'profile_id must be one of the shipped supported profiles',
+});
+
 export const ConfigPersistPayloadSchema = z.object({
-  mapping_bundle: MappingBundleRefSchema,
-  profile_id: z.number(),
+  mapping_document: MappingDocumentSchema,
+  profile_id: SupportedConfigProfileIdSchema,
   bonding_material: z.array(z.number()).optional(),
 });
 
@@ -103,6 +138,7 @@ export const ConfigResponseEnvelopeSchema = z.object({
 
 export type ConfigRequestEnvelope = z.infer<typeof ConfigRequestEnvelopeSchema>;
 export type ConfigResponseEnvelope = z.infer<typeof ConfigResponseEnvelopeSchema>;
+export type MappingDocument = z.infer<typeof MappingDocumentSchema>;
 
 // ==========================================
 // Local Draft Schema

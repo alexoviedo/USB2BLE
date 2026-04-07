@@ -19,14 +19,8 @@ TEST(MappingBundleTest, ValidateValidBundle) {
       .source = {123},
       .source_type = charm::contracts::InputElementType::kButton,
       .target = {LogicalElementType::kButton, 1},
-      .scale = 1,
+      .scale = kMappingScaleOne,
       .offset = 0};
-  bundle.bundle_ref.integrity = 1822546468;
-
-
-
-
-
   bundle.bundle_ref.integrity = charm::core::ComputeMappingBundleHash(bundle);
 
   DefaultMappingBundleValidator validator;
@@ -80,14 +74,8 @@ TEST(MappingBundleTest, ValidateIntegrityFailure) {
       .source = {123},
       .source_type = charm::contracts::InputElementType::kButton,
       .target = {LogicalElementType::kButton, 1},
-      .scale = 1,
+      .scale = kMappingScaleOne,
       .offset = 0};
-  bundle.bundle_ref.integrity = 1822546468;
-
-
-
-
-
   bundle.bundle_ref.integrity = charm::core::ComputeMappingBundleHash(bundle) + 1;
 
   DefaultMappingBundleValidator validator;
@@ -106,14 +94,8 @@ TEST(MappingBundleTest, LoadValidBundle) {
       .source = {123},
       .source_type = charm::contracts::InputElementType::kButton,
       .target = {LogicalElementType::kButton, 1},
-      .scale = 1,
+      .scale = kMappingScaleOne,
       .offset = 0};
-  bundle.bundle_ref.integrity = 1822546468;
-
-
-
-
-
   bundle.bundle_ref.integrity = charm::core::ComputeMappingBundleHash(bundle);
 
   DefaultMappingBundleValidator validator;
@@ -173,6 +155,52 @@ TEST(MappingBundleTest, GetActiveBundleWhenEmpty) {
 
   EXPECT_EQ(get_result.status, charm::contracts::ContractStatus::kUnavailable);
   EXPECT_EQ(get_result.fault_code.category, charm::contracts::ErrorCategory::kInvalidState);
+  EXPECT_EQ(get_result.bundle, nullptr);
+}
+
+TEST(MappingBundleTest, ValidateRejectsInvalidClampRange) {
+  CompiledMappingBundle bundle{};
+  bundle.bundle_ref.version = kSupportedMappingBundleVersion;
+  bundle.entry_count = 1;
+  bundle.entries[0] = {
+      .source = {456},
+      .source_type = charm::contracts::InputElementType::kAxis,
+      .target = {LogicalElementType::kAxis, 0},
+      .scale = kMappingScaleOne,
+      .offset = 0,
+      .deadzone = 0,
+      .clamp_min = 10,
+      .clamp_max = -10};
+  bundle.bundle_ref.integrity = charm::core::ComputeMappingBundleHash(bundle);
+
+  DefaultMappingBundleValidator validator;
+  ValidateMappingBundleRequest request{&bundle};
+  const auto result = validator.Validate(request);
+
+  EXPECT_EQ(result.status, charm::contracts::ContractStatus::kRejected);
+  EXPECT_EQ(result.fault_code.category, charm::contracts::ErrorCategory::kInvalidRequest);
+}
+
+TEST(MappingBundleTest, ClearActiveBundleDropsLoadedState) {
+  CompiledMappingBundle bundle{};
+  bundle.bundle_ref.version = kSupportedMappingBundleVersion;
+  bundle.entry_count = 1;
+  bundle.entries[0] = {
+      .source = {321},
+      .source_type = charm::contracts::InputElementType::kButton,
+      .target = {LogicalElementType::kButton, 0},
+      .scale = kMappingScaleOne,
+      .offset = 0};
+  bundle.bundle_ref.integrity = charm::core::ComputeMappingBundleHash(bundle);
+
+  DefaultMappingBundleValidator validator;
+  DefaultMappingBundleLoader loader(&validator);
+
+  ASSERT_EQ(loader.Load({&bundle}).status, charm::contracts::ContractStatus::kOk);
+  loader.ClearActiveBundle();
+
+  const auto get_result = loader.GetActiveBundle({});
+  EXPECT_EQ(get_result.status, charm::contracts::ContractStatus::kUnavailable);
   EXPECT_EQ(get_result.bundle, nullptr);
 }
 

@@ -1,0 +1,7 @@
+[  8%] Built target gtest
+[ 76%] Built target charm_core_obj
+[ 84%] Built target gtest_main
+[ 88%] Building CXX object CMakeFiles/test_config_transport_runtime_adapter.dir/test_config_transport_runtime_adapter.cpp.o
+[ 92%] Building CXX object CMakeFiles/test_config_transport_runtime_adapter.dir/Users/alex/Developer/CodexUSB/USB2BLE/components/charm_app/src/config_transport_runtime_adapter.cpp.o
+[ 96%] Linking CXX executable test_config_transport_runtime_adapter
+[100%] Built target test_config_transport_runtime_adapter

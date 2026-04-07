@@ -44,6 +44,24 @@ std::uint32_t ComputeMappingBundleHash(const CompiledMappingBundle& bundle) {
       hash ^= ((val >> (b * 8)) & 0xFF);
       hash *= kFnvPrime32;
     }
+
+    val = static_cast<std::uint32_t>(entry.deadzone);
+    for (int b = 0; b < 4; ++b) {
+      hash ^= ((val >> (b * 8)) & 0xFF);
+      hash *= kFnvPrime32;
+    }
+
+    val = static_cast<std::uint32_t>(entry.clamp_min);
+    for (int b = 0; b < 4; ++b) {
+      hash ^= ((val >> (b * 8)) & 0xFF);
+      hash *= kFnvPrime32;
+    }
+
+    val = static_cast<std::uint32_t>(entry.clamp_max);
+    for (int b = 0; b < 4; ++b) {
+      hash ^= ((val >> (b * 8)) & 0xFF);
+      hash *= kFnvPrime32;
+    }
   }
   return hash;
 }
@@ -70,6 +88,15 @@ ValidateMappingBundleResult DefaultMappingBundleValidator::Validate(
     result.status = charm::contracts::ContractStatus::kRejected;
     result.fault_code = {charm::contracts::ErrorCategory::kCapacityExceeded, 0};
     return result;
+  }
+
+  for (std::size_t i = 0; i < bundle.entry_count; ++i) {
+    const auto& entry = bundle.entries[i];
+    if (entry.clamp_min > entry.clamp_max) {
+      result.status = charm::contracts::ContractStatus::kRejected;
+      result.fault_code = {charm::contracts::ErrorCategory::kInvalidRequest, 1};
+      return result;
+    }
   }
 
   if (bundle.bundle_ref.integrity != ComputeMappingBundleHash(bundle)) {
@@ -123,6 +150,11 @@ GetActiveBundleResult DefaultMappingBundleLoader::GetActiveBundle(
   result.status = charm::contracts::ContractStatus::kOk;
   result.bundle = &active_bundle_;
   return result;
+}
+
+void DefaultMappingBundleLoader::ClearActiveBundle() {
+  active_bundle_ = {};
+  has_active_bundle_ = false;
 }
 
 }  // namespace charm::core

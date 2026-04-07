@@ -46,6 +46,8 @@ struct SelectProfileResult {
 
 struct PersistConfigRequest {
   MappingBundleRef mapping_bundle{};
+  const std::uint8_t* compiled_mapping_bundle{nullptr};
+  std::size_t compiled_mapping_bundle_size{0};
   ProfileId profile_id{};
   const std::uint8_t* bonding_material{nullptr};
   std::size_t bonding_material_size{0};
@@ -62,6 +64,8 @@ struct LoadConfigResult {
   ContractStatus status{ContractStatus::kUnspecified};
   FaultCode fault_code{};
   MappingBundleRef mapping_bundle{};
+  const std::uint8_t* compiled_mapping_bundle{nullptr};
+  std::size_t compiled_mapping_bundle_size{0};
   ProfileId profile_id{};
   const std::uint8_t* bonding_material{nullptr};
   std::size_t bonding_material_size{0};

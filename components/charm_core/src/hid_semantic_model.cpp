@@ -1,6 +1,7 @@
 #include "charm/core/hid_semantic_model.hpp"
 
 #include <array>
+#include <algorithm>
 #include <cstdint>
 
 namespace charm::core {
@@ -64,10 +65,14 @@ struct LocalState {
 };
 
 std::int32_t SignExtend(std::uint32_t value, std::uint8_t size) {
-  if (size == 1 && (value & 0x80)) {
-    return static_cast<std::int32_t>(value | 0xFFFFFF00);
-  } else if (size == 2 && (value & 0x8000)) {
-    return static_cast<std::int32_t>(value | 0xFFFF0000);
+  const std::uint8_t bits = static_cast<std::uint8_t>(size * 8);
+  if (bits == 0 || bits >= 32) {
+    return static_cast<std::int32_t>(value);
+  }
+  const std::uint32_t sign_bit = 1u << (bits - 1);
+  if ((value & sign_bit) != 0) {
+    const std::uint32_t mask = ~((1u << bits) - 1u);
+    value |= mask;
   }
   return static_cast<std::int32_t>(value);
 }
@@ -88,6 +93,8 @@ ParseDescriptorResult DefaultHidDescriptorParser::ParseDescriptor(const ParseDes
   SemanticDescriptorModel model;
   ParserState global_state;
   LocalState local_state;
+  std::array<ParserState, 8> global_stack{};
+  std::size_t global_stack_depth = 0;
 
   std::uint16_t bit_offset_input = 0;
   std::uint16_t bit_offset_output = 0;
@@ -166,6 +173,26 @@ ParseDescriptorResult DefaultHidDescriptorParser::ParseDescriptor(const ParseDes
             bit_offset_feature = 0;
           }
           break;
+        case kTagPush:
+          if (global_stack_depth >= global_stack.size()) {
+            result.status = charm::contracts::ContractStatus::kRejected;
+            result.fault_code = charm::contracts::FaultCode{
+                .category = charm::contracts::ErrorCategory::kCapacityExceeded,
+                .reason = 5};
+            return result;
+          }
+          global_stack[global_stack_depth++] = global_state;
+          break;
+        case kTagPop:
+          if (global_stack_depth == 0) {
+            result.status = charm::contracts::ContractStatus::kRejected;
+            result.fault_code = charm::contracts::FaultCode{
+                .category = charm::contracts::ErrorCategory::kContractViolation,
+                .reason = 6};
+            return result;
+          }
+          global_state = global_stack[--global_stack_depth];
+          break;
         default:
           break;
       }
@@ -225,6 +252,9 @@ ParseDescriptorResult DefaultHidDescriptorParser::ParseDescriptor(const ParseDes
         case kTagOutput:
         case kTagFeature: {
           bool is_constant = (raw_value & 0x01) != 0;
+          const bool is_variable = (raw_value & 0x02) != 0;
+          const bool is_relative = (raw_value & 0x04) != 0;
+          const bool has_null_state = (raw_value & 0x40) != 0;
           std::uint16_t* target_bit_offset = &bit_offset_input;
           if (tag == kTagOutput) {
             target_bit_offset = &bit_offset_output;
@@ -232,27 +262,52 @@ ParseDescriptorResult DefaultHidDescriptorParser::ParseDescriptor(const ParseDes
             target_bit_offset = &bit_offset_feature;
           }
 
-          if (!is_constant) {
+          if (global_state.report_size == 0 || global_state.report_count == 0) {
+            result.status = charm::contracts::ContractStatus::kRejected;
+            result.fault_code = charm::contracts::FaultCode{
+                .category = charm::contracts::ErrorCategory::kInvalidRequest,
+                .reason = 7};
+            return result;
+          }
+
+          if (local_state.has_usage_range && local_state.usage_min > local_state.usage_max) {
+            result.status = charm::contracts::ContractStatus::kRejected;
+            result.fault_code = charm::contracts::FaultCode{
+                .category = charm::contracts::ErrorCategory::kContractViolation,
+                .reason = 8};
+            return result;
+          }
+
+          if (tag == kTagInput && !is_constant) {
             for (std::uint16_t i = 0; i < global_state.report_count; ++i) {
               if (model.field_count < kMaxFieldsPerInterface) {
                 FieldDescriptor& field = model.fields[model.field_count++];
                 field.report_id = global_state.report_id;
                 field.usage_page = global_state.usage_page;
+                field.logical_min = global_state.logical_min;
+                field.logical_max = global_state.logical_max;
+                field.is_relative = is_relative;
+                field.is_array = !is_variable;
+                field.has_null_state = has_null_state;
+                field.has_usage_range = local_state.has_usage_range;
+                field.usage_min = local_state.usage_min;
+                field.usage_max = local_state.usage_max;
 
-                if (local_state.has_usage_range) {
+                if (!field.is_array && local_state.has_usage_range) {
                   field.usage = local_state.usage_min + i;
                   if (field.usage > local_state.usage_max) {
                     field.usage = local_state.usage_max;
                   }
-                } else if (i < local_state.usage_count) {
+                } else if (!field.is_array && i < local_state.usage_count) {
                   field.usage = local_state.usages[i];
-                } else if (local_state.usage_count > 0) {
+                } else if (!field.is_array && local_state.usage_count > 0) {
                   field.usage = local_state.usages[local_state.usage_count - 1];
                 } else {
                   field.usage = 0;
                 }
 
-                field.collection_index = collection_depth > 0 ? collection_stack[collection_depth - 1] : 0;
+                field.collection_index =
+                    collection_depth > 0 ? collection_stack[collection_depth - 1] : 0;
                 field.logical_index = i;
                 field.bit_offset = *target_bit_offset;
                 field.bit_size = global_state.report_size;
@@ -261,7 +316,7 @@ ParseDescriptorResult DefaultHidDescriptorParser::ParseDescriptor(const ParseDes
                 result.status = charm::contracts::ContractStatus::kRejected;
                 result.fault_code = charm::contracts::FaultCode{
                     .category = charm::contracts::ErrorCategory::kCapacityExceeded,
-                    .reason = 4}; // Fields capacity exceeded
+                    .reason = 4};
                 return result;
               }
               *target_bit_offset += global_state.report_size;

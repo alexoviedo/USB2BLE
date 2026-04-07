@@ -77,8 +77,12 @@ StorageInitOutcome InitializeStorage(const StorageInitFns& fns) {
 }
 
 bool InitializeStorageAndActivate(
-    charm::ports::ConfigStorePort& store, charm::core::Supervisor& supervisor,
-    void (*activate_fn)(charm::ports::ConfigStorePort&, charm::core::Supervisor&),
+    charm::ports::ConfigStorePort& store,
+    charm::core::MappingBundleLoader& mapping_bundle_loader,
+    charm::core::Supervisor& supervisor,
+    void (*activate_fn)(charm::ports::ConfigStorePort&,
+                        charm::core::MappingBundleLoader&,
+                        charm::core::Supervisor&),
     const StorageInitFns& fns) {
   const StorageInitOutcome outcome = InitializeStorage(fns);
   if (!outcome.ok) {
@@ -91,7 +95,7 @@ bool InitializeStorageAndActivate(
   }
 
   if (activate_fn != nullptr) {
-    activate_fn(store, supervisor);
+    activate_fn(store, mapping_bundle_loader, supervisor);
   }
   return true;
 }

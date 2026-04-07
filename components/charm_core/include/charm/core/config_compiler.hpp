@@ -12,6 +12,9 @@
 namespace charm::core {
 
 inline constexpr std::size_t kMaxCompileDiagnostics = 64;
+inline constexpr std::uint32_t kSupportedMappingDocumentVersion = 1;
+inline constexpr std::size_t kMaxCompilerAnalogSources = 8;
+inline constexpr std::size_t kMaxCompilerButtonSources = 16;
 
 enum class DiagnosticSeverity : std::uint8_t {
   kInfo = 0,
@@ -58,5 +61,17 @@ class ConfigCompiler {
   virtual ValidateConfigResult ValidateConfig(const ValidateConfigRequest& request) const = 0;
   virtual CompileConfigResult CompileConfig(const CompileConfigRequest& request) const = 0;
 };
+
+class DefaultConfigCompiler final : public ConfigCompiler {
+ public:
+  ValidateConfigResult ValidateConfig(const ValidateConfigRequest& request) const override;
+  CompileConfigResult CompileConfig(const CompileConfigRequest& request) const override;
+};
+
+charm::contracts::InputElementType CanonicalizeCompilerSourceType(
+    charm::contracts::InputElementType source_type);
+charm::contracts::ElementKeyHash MakeCompilerSourceHash(
+    charm::contracts::InputElementType canonical_source_type,
+    std::uint16_t source_index);
 
 }  // namespace charm::core

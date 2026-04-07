@@ -1,0 +1,11 @@
+{
+  "scenario": "ENV-BOOTSTRAP",
+  "date_utc": "2026-04-07T02:06:49Z",
+  "result": "PENDING",
+  "hardware": [],
+  "firmware_commit": "ce0023b",
+  "notes": "Fill in after execution.",
+  "evidence": [
+    "commands.txt"
+  ]
+}
